@@ -527,6 +527,7 @@ class local_eventocoursecreation_course_creation {
         $limitationfilter2->thefromdate = date(LOCAL_EVENTO_DATETIME_FORMAT, strtotime('-1 year'));
         $limitationfilter2->thetodate = date(LOCAL_EVENTO_DATETIME_FORMAT, time());
         $limitationfilter2->themaxresultvalue = 10000;
+        $limitationfilter2->sortfield = 'anlassNummer';
 
         $eventoanlassfilter->anlassnummer = $modn . '%';
         $eventoanlassfilter->idanlasstyp = local_evento_idanlasstyp::MODULANLASS;
