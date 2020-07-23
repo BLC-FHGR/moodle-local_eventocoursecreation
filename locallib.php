@@ -51,7 +51,7 @@ define('EVENTOCOURSECREATION_IDNUMBER_OPTIONS_DELIMITER', '§');
 /**
  * Prefix for category idnumbers which contains module numbers
  */
-define('EVENTOCOURSECREATION_IDNUMBER_PREFIX', 'mod.');
+define('EVENTOCOURSECREATION_IDNUMBER_PREFIX', 'mod');
 
 /**
  * Prefix for spring term inside evento eventnumbers
