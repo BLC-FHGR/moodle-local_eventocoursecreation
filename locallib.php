@@ -63,6 +63,11 @@ define('EVENTOCOURSECREATION_SPRINGTERM_PREFIX', 'FS');
  */
 define('EVENTOCOURSECREATION_AUTUMNTERM_PREFIX', 'HS');
 
+/**
+ * Prefix for EMBA courses
+ */
+define('EVENTOCOURSECREATION_EMBA_PREFIX', '20');
+
 
 // Name Placeholders for the cours names.
 /**

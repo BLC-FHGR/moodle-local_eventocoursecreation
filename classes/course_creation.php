@@ -489,7 +489,8 @@ class local_eventocoursecreation_course_creation {
             $modnumbers = array_filter($modnumbers,
                                 function ($var) {
                                     return (strtoupper(substr($var, 0, 2 )) == EVENTOCOURSECREATION_AUTUMNTERM_PREFIX
-                                            || strtoupper(substr($var, 0, 2 )) == EVENTOCOURSECREATION_SPRINGTERM_PREFIX);
+                                            || strtoupper(substr($var, 0, 2 )) == EVENTOCOURSECREATION_SPRINGTERM_PREFIX
+                                            || substr($var, 0, 2) == EVENTOCOURSECREATION_EMBA_PREFIX);
                                 }
             );
             $result = reset($modnumbers);
