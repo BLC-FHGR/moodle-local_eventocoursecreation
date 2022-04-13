@@ -74,7 +74,7 @@ class local_eventocoursecreation_course_creation {
     public function course_sync(progress_trace $trace, $categoryid = null, $force = false) {
         global $CFG;
         try {
-            require_once($CFG->libdir. '/coursecatlib.php');
+            //require_once($CFG->libdir. '/coursecatlib.php'); deprecated since Moodle 3.10
 
             // Init.
             $this->trace = $trace;
@@ -882,7 +882,7 @@ class local_eventocoursecreation_course_creation {
         $newcat->name = $name;
         $newcat->parent = $parentcatid;
         $newcat->idnumber = $subcatidnumber;
-        $subcat = coursecat::create($newcat);
+        $subcat = core_course_category::create($newcat);
 
         return $subcat;
     }
