@@ -52,6 +52,10 @@ class local_eventocoursecreation_course_creation {
     // Temporary member variable for filter_valid_create_events
     // This is for the course of studies modulenumber prefix.
     protected $modnrprefix;
+    // Array keeping track of created main courses (Parallelanlässe)
+    protected $mainevents = array();
+    // Array storing enrolment information of sub courses (Parallelanlässe)
+    protected $subcourseenrolments = array();
 
     /**
      * Initialize the service keeping reference to the soap-client
@@ -73,6 +77,7 @@ class local_eventocoursecreation_course_creation {
      */
     public function course_sync(progress_trace $trace, $categoryid = null, $force = false) {
         global $CFG;
+        global $DB;
         try {
             //require_once($CFG->libdir. '/coursecatlib.php'); deprecated since Moodle 3.10
 
@@ -151,20 +156,84 @@ class local_eventocoursecreation_course_creation {
 
                                 // Get existing course.
                                 $moodlecourse = $this->get_course_by_idnumber($event->anlassNummer, $subcat->id, $catoptions);
-                                if ($moodlecourse) {
-                                    // Option gm for "gemeinsame Modulanlässe".
-                                    if (in_array("gm", $catoptions)) {
-                                        if ($this->enrolplugin->instance_exists_by_eventnumber($moodlecourse, $event->anlassNummer)) {
-                                            // Main Moodle course have got already an enrolment.
+
+                                if (!$moodlecourse) {
+                                    // Filter out "Parallelanlässe" because sub events don't need courses
+                                    // Check if the event is a sub event
+                                    if (!is_null($event->anlass_Zusatz15) && !($event->anlass_Zusatz15 === $event->idAnlass)) {
+                                        // Check if the main event for this sub event has already been created in this sync
+                                        $mainevent = array_filter($this->mainevents, function($mainevent) use ($event) {
+                                            return $mainevent->idAnlass != $event->anlass_Zusatz15 ? null : $mainevent;
+                                        });
+                                        if (is_null($mainevent)) {
+                                            $limitationfilter2 = new local_evento_limitationfilter2();
+                                            $eventoanlassfilter = new local_evento_eventoanlassfilter();
+                                            $eventoanlassfilter->idAnlass = $event->anlass_Zusatz15;
+                                            $mainevent = $this->eventoservice->get_events_by_filter($eventoanlassfilter, $limitationfilter2);
+
+                                            // Check if main event still has an evento event
+                                            if ($mainevent->idAnlass != $event->anlass_Zusatz15) {
+                                                // Tehere is no main event anymore
+                                                // Do nothing! Maybe delete sub enrolment?
+                                                $this->trace->output('Evento "Parallelanlass" ' . $event->anlassNummer . ' doesn\'t have a main course...');
+                                                continue;
+                                            }
+                                            // Get the Moodle course for this main event
+                                            // Checks if this is a new sub event for an old course
+                                            $moodlecourse = $DB->get_record_sql('SELECT * FROM {course} WHERE idnumber LIKE ?', ["%" . $mainevent->anlassNummer . "%"]);
+                                        }
+                                        if (!isset($moodlecourse->id)) {
+                                            $this->trace->output('Wait to add evento "Parallelanlass" ' . $event->anlassNummer . ' to it\'s main course...');
+                                            array_push($this->subcourseenrolments, $event);
                                             continue;
                                         }
-                                    } else {
-                                        // Do nothing, course was already created previously.
+                                        // Add sub event enrolment to main event course
+                                        $fields = $this->enrolplugin->get_instance_defaults();
+                                        // use the sub event "anlassNummer"
+                                        $fields = $this->enrolplugin->set_custom_coursenumber($fields, $event->anlassNummer);
+                                        $fields['name'] = 'Evento Parallelanlass';
+                                        $this->enrolplugin->add_instance($moodlecourse, $fields);
+                                        $this->trace->output('Evento "Parallelanlass" enrolment ' . $event->anlassNummer . ' added to it\'s main course ' . $mainevent->anlassNummer . '...');
+                                        continue;
+                                    }
+                                    // Create an empty course.
+                                    $moodlecourse = $this->create_new_course($event, $subcat->id, $setting);
+                                } 
+
+                                // Check if the event is a main event
+                                if (!is_null($event->anlass_Zusatz15) && ($event->anlass_Zusatz15 === $event->idAnlass)) {
+                                    // Add event to main course array
+                                    array_push($this->mainevents, $event);
+                                    // Add main course enrolment to main course
+                                    $fields = $this->enrolplugin->get_instance_defaults();
+                                    $this->enrolplugin->add_instance($moodlecourse, $fields);
+                                    $this->trace->output('Evento enrolment ' . $event->anlassNummer . ' added to it\'s Moodle course...');
+                                    // Check for sub event enrolments
+                                    foreach ($this->subcourseenrolments as $key => $subcourse) {
+                                        if ($subcourse->anlass_Zusatz15 === $event->idAnlass) {
+                                            // Add sub event enrolment to main event course
+                                            $fields = $this->enrolplugin->get_instance_defaults();
+                                            // use the sub event "anlassNummer"
+                                            $fields = $this->enrolplugin->set_custom_coursenumber($fields, $subcourse->anlassNummer);
+                                            $fields['name'] = 'Evento Parallelanlass';
+                                            $this->enrolplugin->add_instance($moodlecourse, $fields);
+                                            $this->trace->output('Evento "Parallelanlass" enrolment ' . $subcourse->anlassNummer . ' added to it\'s main course ' . $event->anlassNummer . '...');
+                                            // Remove sub events which have been linked to a main event
+                                            unset($this->subcourseenrolments[$key]);
+                                        }
+                                    }
+                                }
+                                // continue with normal course creation process
+                                
+                                // Option gm for "gemeinsame Modulanlässe".
+                                if (in_array("gm", $catoptions)) {
+                                    if ($this->enrolplugin->instance_exists_by_eventnumber($moodlecourse, $event->anlassNummer)) {
+                                        // Main Moodle course have got already an enrolment.
                                         continue;
                                     }
                                 } else {
-                                    // Create an empty course.
-                                    $moodlecourse = $this->create_new_course($event, $subcat->id, $setting);
+                                    // Do nothing, course was already created previously.
+                                    continue;
                                 }
 
                                 // Add Evento enrolment instance ONLY if the instance is not in the course.
@@ -176,6 +245,7 @@ class local_eventocoursecreation_course_creation {
                                         $fields['name'] = 'Evento ' . $event->anlassNummer;
                                     }
                                     $this->enrolplugin->add_instance($moodlecourse, $fields);
+                                    $this->trace->output('Evento enrolment ' . $event->anlassNummer . ' added to it\'s Moodle course...');
                                 }
                             } catch (SoapFault $fault) {
                                 debugging("Soapfault : ". $fault->__toString());
