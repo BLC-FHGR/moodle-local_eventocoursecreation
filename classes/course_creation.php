@@ -162,9 +162,11 @@ class local_eventocoursecreation_course_creation {
                                     // Check if the event is a sub event
                                     if (!is_null($event->anlass_Zusatz15) && !($event->anlass_Zusatz15 === $event->idAnlass)) {
                                         // Check if the main event for this sub event has already been created in this sync
-                                        $mainevent = array_filter($this->mainevents, function($mainevent) use ($event) {
-                                            return $mainevent->idAnlass != $event->anlass_Zusatz15 ? null : $mainevent;
+                                        $maineventarr = array_filter($this->mainevents, function($mainevent) use ($event) {
+                                            return $mainevent->idAnlass == $event->anlass_Zusatz15;
                                         });
+                                        $mainevent = array_shift($maineventarr);
+
                                         if (is_null($mainevent)) {
                                             $limitationfilter2 = new local_evento_limitationfilter2();
                                             $eventoanlassfilter = new local_evento_eventoanlassfilter();
@@ -172,16 +174,17 @@ class local_eventocoursecreation_course_creation {
                                             $mainevent = $this->eventoservice->get_events_by_filter($eventoanlassfilter, $limitationfilter2);
 
                                             // Check if main event still has an evento event
-                                            if ($mainevent->idAnlass != $event->anlass_Zusatz15) {
+                                            if (empty($mainevent) || is_null($mainevent) || $mainevent->idAnlass != $event->anlass_Zusatz15) {
                                                 // Tehere is no main event anymore
                                                 // Do nothing! Maybe delete sub enrolment?
                                                 $this->trace->output('Evento "Parallelanlass" ' . $event->anlassNummer . ' doesn\'t have a main course...');
                                                 continue;
                                             }
-                                            // Get the Moodle course for this main event
-                                            // Checks if this is a new sub event for an old course
-                                            $moodlecourse = $DB->get_record_sql('SELECT * FROM {course} WHERE idnumber LIKE ?', ["%" . $mainevent->anlassNummer . "%"]);
                                         }
+                                        // Get the Moodle course for this main event
+                                        // Checks if this is a new sub event for an old course
+                                        $moodlecourse = $DB->get_record_sql('SELECT * FROM {course} WHERE idnumber LIKE ?', ["%" . $mainevent->anlassNummer . "%"]);
+
                                         if (!isset($moodlecourse->id)) {
                                             $this->trace->output('Wait to add evento "Parallelanlass" ' . $event->anlassNummer . ' to it\'s main course...');
                                             array_push($this->subcourseenrolments, $event);
