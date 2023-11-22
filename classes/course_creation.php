@@ -184,10 +184,15 @@ class local_eventocoursecreation_course_creation {
                                         // Get the Moodle course for this main event
                                         // Checks if this is a new sub event for an old course
                                         $moodlecourse = $DB->get_record_sql('SELECT * FROM {course} WHERE idnumber LIKE ?', ["%" . $mainevent->anlassNummer . "%"]);
-
                                         if (!isset($moodlecourse->id)) {
                                             $this->trace->output('Wait to add evento "Parallelanlass" ' . $event->anlassNummer . ' to it\'s main course...');
                                             array_push($this->subcourseenrolments, $event);
+                                            continue;
+                                        }
+
+                                        // Check if the enrolment is already in the old course
+                                        if ($DB->record_exists_sql('SELECT * FROM {enrol} WHERE courseid = ? AND customtext1 = ?', [$moodlecourse->id, $event->anlassNummer])) {
+                                            $this->trace->output('"Parallelanlass" ' . $event->anlassNummer . ' already in it\'s main course...');
                                             continue;
                                         }
                                         // Add sub event enrolment to main event course
@@ -207,10 +212,6 @@ class local_eventocoursecreation_course_creation {
                                 if (!is_null($event->anlass_Zusatz15) && ($event->anlass_Zusatz15 === $event->idAnlass)) {
                                     // Add event to main course array
                                     array_push($this->mainevents, $event);
-                                    // Add main course enrolment to main course
-                                    $fields = $this->enrolplugin->get_instance_defaults();
-                                    $this->enrolplugin->add_instance($moodlecourse, $fields);
-                                    $this->trace->output('Evento enrolment ' . $event->anlassNummer . ' added to it\'s Moodle course...');
                                     // Check for sub event enrolments
                                     foreach ($this->subcourseenrolments as $key => $subcourse) {
                                         if ($subcourse->anlass_Zusatz15 === $event->idAnlass) {
@@ -225,6 +226,14 @@ class local_eventocoursecreation_course_creation {
                                             unset($this->subcourseenrolments[$key]);
                                         }
                                     }
+                                    if ($this->enrolplugin->instance_exists_by_eventnumber($moodlecourse, $event->anlassNummer)) {
+                                        // Main Moodle course have got already an enrolment.
+                                        continue;
+                                    }
+                                    // Add main course enrolment to main course
+                                    $fields = $this->enrolplugin->get_instance_defaults();
+                                    $this->enrolplugin->add_instance($moodlecourse, $fields);
+                                    $this->trace->output('Evento enrolment ' . $event->anlassNummer . ' added to it\'s Moodle course...');
                                 }
                                 // continue with normal course creation process
                                 
