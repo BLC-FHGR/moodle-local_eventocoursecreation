@@ -24,7 +24,7 @@
 
 require('../../config.php');
 require_once($CFG->libdir .'/weblib.php');
-require_once($CFG->libdir.'/coursecatlib.php');
+//require_once($CFG->libdir.'/coursecatlib.php'); deprecated since Moodle 3.10
 
 require_login(true);
 
@@ -42,7 +42,7 @@ if ($context->contextlevel !== CONTEXT_COURSECAT) {
 }
 
 if ($catid) {
-    $coursecat = coursecat::get($catid, MUST_EXIST, true);
+    $coursecat = core_course_category::get($catid, MUST_EXIST, true);
     $category = $coursecat->get_db_record();
     $url = new moodle_url('/local/eventocoursecreation/setting_form.php', array('contextid' => $contextid));
     $url->param('id', $catid);

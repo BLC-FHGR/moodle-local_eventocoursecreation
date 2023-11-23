@@ -24,7 +24,7 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-require_once('locallib.php');
+require_once($CFG->dirroot.'/local/eventocoursecreation/locallib.php');
 
 if ($hassiteconfig) {
 
