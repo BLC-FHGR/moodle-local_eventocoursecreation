@@ -24,11 +24,11 @@
 
 defined('MOODLE_INTERNAL') || die;
 
-$plugin->version   = 2023110700; // The current module version (Date: YYYYMMDDXX)
+$plugin->version   = 2023112200; // The current module version (Date: YYYYMMDDXX)
 $plugin->requires  = 2016120500; // Requires this Moodle version.
 $plugin->component = 'local_eventocoursecreation';
 $plugin->maturity  = MATURITY_STABLE;
-$plugin->release   = "2.1.1"; // User-friendly version number.
+$plugin->release   = "2.1.2"; // User-friendly version number.
 $plugin->dependencies = array(
     'local_evento' => 2018072600
 );
