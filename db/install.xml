@@ -8,6 +8,8 @@
                 <FIELD NAME="templatecourse" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
                 <FIELD NAME="enablecoursetemplate" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
                 <FIELD NAME="enablecatcoursecreation" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+                <FIELD NAME="starttimecourse" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="946681200" SEQUENCE="false"/>
+                <FIELD NAME="setcustomcoursestart" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
                 <FIELD NAME="starttimespringtermday" TYPE="int" LENGTH="2" NOTNULL="true" SEQUENCE="false"/>
                 <FIELD NAME="starttimespringtermmonth" TYPE="int" LENGTH="2" NOTNULL="true" SEQUENCE="false"/>
                 <FIELD NAME="execonlyonstarttimespringterm" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>

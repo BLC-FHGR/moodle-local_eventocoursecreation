@@ -123,6 +123,18 @@ class local_eventocoursecreation_setting_form extends moodleform {
         $months['11'] = get_string('november', 'local_eventocoursecreation');
         $months['12'] = get_string('december', 'local_eventocoursecreation');
 
+        // Custom course creation parameters
+        $mform->addElement('header', 'customcoursesettings', get_string('customcoursesettings', 'local_eventocoursecreation'));
+        $mform->setExpanded('customcoursesettings');
+
+        $mform->addElement('date_time_selector', 'starttimecourse', get_string('coursestart', 'local_eventocoursecreation'));
+        $mform->addHelpButton('starttimecourse', 'coursestart', 'local_eventocoursecreation');
+        $mform->setDefault('starttimecourse', $config->starttimecourse);
+        $mform->addElement('advcheckbox', 'setcustomcoursestarttime', get_string('setcustomcoursestart', 'local_eventocoursecreation'),
+                            '', null, array(0, 1));
+        $mform->setDefault('setcustomcoursestarttime', $config->setcustomcoursestarttime);
+        $mform->addHelpButton('setcustomcoursestarttime', 'setcustomcoursestart', 'local_eventocoursecreation');
+
         // Spring Term.
         $mform->addElement('header', 'startspringterm', get_string('startspringterm', 'local_eventocoursecreation'));
         $mform->setExpanded('startspringterm');
@@ -176,6 +188,11 @@ class local_eventocoursecreation_setting_form extends moodleform {
                     $errors['idnumber'] = get_string('categoryidnumbertaken', 'error');
                 }
             }
+        }
+
+        // Course start
+        if (!is_int($data['starttimecourse'])) {
+            $errors['starttimecourse'] = get_string('starttimecourseinvalid', 'local_eventocoursecreation');
         }
 
         // Day.

@@ -42,6 +42,8 @@ class local_eventocoursecreation_setting {
         'enablecatcoursecreation' => array('en', 1),
         'templatecourse' => array('tc', null),
         'enablecoursetemplate' => array('et', 0),
+        'starttimecourse' => array('st', EVENTOCOURSECREATION_DEFAULT_CUSTOM_START),
+        'setcustomcoursestarttime' => array('sc', 0),
         'starttimespringtermday' => array('sd', EVENTOCOURSECREATION_DEFAULT_SPRINGTERM_STARTDAY),
         'starttimespringtermmonth' => array('sm', EVENTOCOURSECREATION_DEFAULT_SPRINGTERM_STARTMONTH),
         'execonlyonstarttimespringterm' => array('es', 1),
@@ -68,6 +70,12 @@ class local_eventocoursecreation_setting {
 
     /** @var int */
     protected $enablecoursetemplate = 0;
+
+    /** @var int */
+    protected $starttimecourse = EVENTOCOURSECREATION_DEFAULT_CUSTOM_START;
+
+    /** @var int */
+    protected $setcustomcoursestarttime = 0;
 
     /** @var int */
     protected $starttimespringtermday = EVENTOCOURSECREATION_DEFAULT_SPRINGTERM_STARTDAY;
@@ -166,6 +174,8 @@ class local_eventocoursecreation_setting {
 
         $config = get_config('local_eventocoursecreation');
 
+        $this->starttimecourse = $config->starttimecourse;
+        $this->setcustomcoursestarttime = $config->setcustomcoursestarttime;
         $this->starttimespringtermday = $config->starttimespringtermday;
         $this->starttimespringtermmonth = $config->starttimespringtermmonth;
         $this->execonlyonstarttimespringterm = $config->execonlyonstarttimespringterm;
@@ -304,6 +314,12 @@ class local_eventocoursecreation_setting {
         } else {
             $newsetting->templatecourse = $data->templatecourse;
         }
+        if (isset($data->starttimecourse)) {
+            if (!is_int($data->starttimecourse)) {
+                throw new moodle_exception('starttimecourseinvalid');
+            }
+            $newsetting->starttimecourse = $data->starttimecourse;
+        }
         $newsetting->enablecoursetemplate = $data->enablecoursetemplate;
         $newsetting->execonlyonstarttimespringterm = $data->execonlyonstarttimespringterm;
         $newsetting->execonlyonstarttimeautumnterm = $data->execonlyonstarttimeautumnterm;
@@ -311,6 +327,7 @@ class local_eventocoursecreation_setting {
         $newsetting->newsitemsnumber = $data->newsitemsnumber;
         $newsetting->numberofsections = $data->numberofsections;
         $newsetting->enablecatcoursecreation = $data->enablecatcoursecreation;
+        $newsetting->setcustomcoursestarttime = $data->setcustomcoursestarttime;
 
         $newsetting->timemodified = time();
 

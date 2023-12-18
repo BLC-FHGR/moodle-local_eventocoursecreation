@@ -708,6 +708,9 @@ class local_eventocoursecreation_course_creation {
             if (!empty($event->anlassDatumBis)) {
                 $newcourse->enddate = strtotime($event->anlassDatumBis);
             }
+            if (!empty($setting->setcustomcoursestarttime)){
+                $newcourse->startdate = $setting->starttimecourse;
+            } 
             $newcourse->visible = $setting->coursevisibility;
             $newcourse->newsitems = $setting->newsitemsnumber;
             $newcourse->numsections = $setting->numberofsections;
