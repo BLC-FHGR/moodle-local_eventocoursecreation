@@ -32,7 +32,7 @@ function xmldb_local_eventocoursecreation_upgrade($oldversion) {
     global $DB;
     $dbman = $DB->get_manager();
 
-    if ($oldversion < 2023122800) {
+    if ($oldversion < 2023121800) {
 
         // Define field completionminattempts to be added to eventocoursecreation.
         $table = new xmldb_table('eventocoursecreation');
@@ -58,7 +58,7 @@ function xmldb_local_eventocoursecreation_upgrade($oldversion) {
         }
 
         // Eventocoursecreation savepoint reached.
-        upgrade_plugin_savepoint(true, 2023122800, 'eventocoursecreation', 'local');
+        upgrade_plugin_savepoint(true, 2023121800, 'eventocoursecreation', 'local');
     }
 
     return true;
