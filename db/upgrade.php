@@ -58,7 +58,7 @@ function xmldb_local_eventocoursecreation_upgrade($oldversion) {
         }
 
         // Eventocoursecreation savepoint reached.
-        upgrade_plugin_savepoint(true, 2023121800, 'eventocoursecreation', 'local');
+        upgrade_plugin_savepoint(true, 2023121800, 'local', 'eventocoursecreation');
     }
 
     return true;
