@@ -45,15 +45,17 @@ function xmldb_local_eventocoursecreation_upgrade($oldversion) {
         }
 
         if (!$dbman->field_exists($table, $customfield)) {
-            $dbman->add_field($table, $timefield);
+            $dbman->add_field($table, $customfield);
         }
 
         // Insert new config parameters into global settings
-        if (!$DB->record_exists('config_plugins', ['plugin' => 'local_eventocoursecreation', 'name' => 'starttimecourse'])) {
+        if (!$DB->record_exists_sql('SELECT * FROM {config_plugins} WHERE plugin = ? AND name = ?',
+        ['local_eventocoursecreation', 'starttimecourse'])) {
             $DB->insert_record('config_plugins', ['plugin' => 'local_eventocoursecreation', 'name' => 'starttimecourse', 'value' => 946681200]);
         }
 
-        if (!$DB->record_exists('config_plugins', ['plugin' => 'local_eventocoursecreation', 'name' => 'setcustomcoursestarttime'])) {
+        if (!$DB->record_exists_sql('SELECT * FROM {config_plugins} WHERE plugin = ? AND name = ?',
+        ['local_eventocoursecreation', 'setcustomcoursestarttime'])) {
             $DB->insert_record('config_plugins', ['plugin' => 'local_eventocoursecreation', 'name' => 'setcustomcoursestarttime', 'value' => 0]);
         }
 
