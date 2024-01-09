@@ -235,18 +235,12 @@ class local_eventocoursecreation_course_creation {
                                     $this->enrolplugin->add_instance($moodlecourse, $fields);
                                     $this->trace->output('Evento enrolment ' . $event->anlassNummer . ' added to it\'s Moodle course...');
                                 }
-                                // continue with normal course creation process
-                                
-                                // Option gm for "gemeinsame Modulanlässe".
-                                if (in_array("gm", $catoptions)) {
-                                    if ($this->enrolplugin->instance_exists_by_eventnumber($moodlecourse, $event->anlassNummer)) {
-                                        // Main Moodle course have got already an enrolment.
-                                        continue;
-                                    }
-                                } else {
-                                    // Do nothing, course was already created previously.
+
+                                if ($this->enrolplugin->instance_exists_by_eventnumber($moodlecourse, $event->anlassNummer)) {
+                                    // Main Moodle course have got already an enrolment.
                                     continue;
                                 }
+                                // continue with normal course creation process
 
                                 // Add Evento enrolment instance ONLY if the instance is not in the course.
                                 if (isset($moodlecourse) && isset($this->enrolplugin) && enrol_is_enabled('evento')) {
