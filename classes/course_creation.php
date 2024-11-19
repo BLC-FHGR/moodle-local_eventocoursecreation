@@ -1,757 +1,617 @@
 <?php
-// This file is part of Moodle - http://moodle.org/
-//
-// Moodle is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Moodle is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
-
 /**
  * Evento course creation plugin
+ * 
+ * Handles automatic course creation and management based on Evento system data.
+ * Runs as a scheduled task to sync courses between Evento and Moodle.
  *
  * @package    local_eventocoursecreation
- * @copyright  2017 HTW Chur Roger Barras
+ * @copyright  2024 FHGR Julien Rädler
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-
 defined('MOODLE_INTERNAL') || die();
 
-require_once($CFG->dirroot . '/local/eventocoursecreation/locallib.php');
-require_once($CFG->dirroot . '/cache/lib.php');
+require_once($CFG->dirroot . '/local/evento/classes/evento_service.php');
+require_once($CFG->libdir . '/weblib.php');
 require_once($CFG->dirroot . '/backup/util/includes/backup_includes.php');
 require_once($CFG->dirroot . '/backup/util/includes/restore_includes.php');
 
-/**
- * Class definition for the evento course creation
- *
- * @package    local_eventocoursecreation
- * @copyright  2017 HTW Chur Roger Barras
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
 class local_eventocoursecreation_course_creation {
-    // Plugin configuration.
+    // Core dependencies
     private $config;
-    // Trace reference to null_progress_trace.
     protected $trace;
-    // Evento WS reference to local_evento_evento_service.
     protected $eventoservice;
-    // Soapfaultcodes for stop execution.
-    protected $stopsoapfaultcodes = array('HTTP', 'soapenv:Server', 'Server');
-    // Evento enrolplugin.
     protected $enrolplugin;
-    // Temporary Array of moodle courses which are created or gotten from the database during sync.
+
+    // Data caches
     protected $moodlecourses = array();
-    // Temporary member variable for filter_valid_create_events
-    // This is for the course of studies modulenumber prefix.
-    protected $modnrprefix;
-    // Array keeping track of created main courses (Parallelanlässe)
     protected $mainevents = array();
-    // Array storing enrolment information of sub courses (Parallelanlässe)
     protected $subcourseenrolments = array();
+    protected $categoryVeranstalterMap = array();
+    protected $currentSubcategory = null;
+    protected $currentPeriodName = null;
 
     /**
-     * Initialize the service keeping reference to the soap-client
-     *
+     * Constructor
      */
     public function __construct() {
         $this->config = get_config('local_eventocoursecreation');
+        $this->trace = new \null_progress_trace();
         $this->eventoservice = new local_evento_evento_service();
         $this->enrolplugin = enrol_get_plugin('evento');
     }
 
     /**
-     * Sync all categories with evento links.
+     * Set the progress trace instance
      *
-     * @param progress_trace $trace
-     * @param int $categoryid one category, empty means all
-     * @param bool $force if true, forces the execution, regardless if we are in a timeslot
-     * @return int 0 means ok, 1 means error, 2 means plugin disabled
+     * @param \progress_trace $trace Progress tracking instance
      */
-    public function course_sync(progress_trace $trace, $categoryid = null, $force = false) {
-        global $CFG;
-        global $DB;
-        try {
-            //require_once($CFG->libdir. '/coursecatlib.php'); deprecated since Moodle 3.10
+    public function set_trace(\progress_trace $trace): void {
+        $this->trace = $trace;
+    }
 
-            // Init.
+    /**
+     * Main synchronization method for course creation
+     * 
+     * @param progress_trace $trace Progress tracking
+     * @param int|null $categoryid Optional specific category to process
+     * @param bool $force Whether to force sync regardless of settings
+     * @return int Status code (0=success, 1=error, 2=preconditions not met)
+     */
+    public function course_sync(\progress_trace $trace, $categoryid = null, $force = false) {
+        try {
             $this->trace = $trace;
             $this->moodlecourses = array();
-            $syncstart = microtime(true);
-
-            if ($this->config->enableplugin == 0) {
-                $pluginname = new lang_string('pluginname', 'local_eventocoursecreation');
-                $this->trace->output($pluginname . " plugin not enabled");
-                $this->trace->finished();
-                return 2;
-            }
-            // Unfortunately this may take a long time, execution can be interrupted safely here.
+            $this->currentSubcategory = null;
+            $this->currentPeriodName = null;
+            
             core_php_time_limit::raise();
             raise_memory_limit(MEMORY_HUGE);
 
-            if (!$this->eventoservice->init_call()) {
-                // Webservice not available.
-                $this->trace->output("Evento webservice not available");
+            if (!$this->config->enableplugin) {
+                $this->trace->output("Plugin not enabled");
                 return 2;
             }
 
             $this->trace->output('Starting evento course synchronisation...');
 
-            if (isset($categoryid)) {
-                $categories = self::get_category_records("cc.id = :catid", array('catid' => $categoryid));
-            } else {
-                $categories = self::get_categories(EVENTOCOURSECREATION_IDNUMBER_PREFIX);
+            // Initialize connection using evento service
+            if (!$this->eventoservice->init_call()) {
+                $this->trace->output("Could not initialize Evento connection");
+                return 2;
             }
 
-            foreach ($categories as $cat) {
-                $catoptions = self::get_coursecat_options($cat->idnumber);
-                $modnumbers = self::get_module_ids($cat->idnumber);
-
-                $setting = local_eventocoursecreation_setting::get($cat->id);
-                if ($setting->enablecatcoursecreation == 0) {
-                    // Course creation not enabled for this category.
-                    continue;
+            try {
+                // Get active veranstalter using evento service
+                $veranstalter = $this->eventoservice->get_active_veranstalter();
+                if (empty($veranstalter)) {
+                    $this->trace->output("No active Veranstalter found");
+                    return 2;
                 }
-                // Check if we are in a timeslot for course creation.
-                if (!$force) {
-                    if (!$this->is_creation_allowed($setting)) {
-                        continue;
-                    }
+                
+                // Process categories
+                if ($categoryid) {
+                    $categories = $this->get_single_category($veranstalter, $categoryid);
+                } else {
+                    $categories = $this->process_all_categories($veranstalter);
+                }
+                
+                // Process each category
+                foreach ($categories as $category) {
+                    $this->process_category($category, $force);
                 }
 
-                foreach ($modnumbers as $modn) {
-                    try {
-                        // Get all Evento moduls with the same eventonumber (p.I.: "mod.bsp%"), active and with a future start date.
-                        $events = $this->get_future_events($modn);
-                        // Invert the array to create it in a proper order in moodle. Create last course first.
-                        $events = array_reverse($events);
-                        $subcat = null;
-                        $period = "";
-
-                        foreach ($events as $event) {
-                            try {
-                                $starttime = strtotime($event->anlassDatumVon);
-                                $starttime = $starttime ? $starttime : null;
-
-                                $newperiod = self::get_module_period($event->anlassNummer, $starttime);
-                                // Reset subcat if not in the same period.
-                                $subcat = ($period != $newperiod) ? null : $subcat;
-                                $period = $newperiod;
-                                // Get or create the period subcategory.
-                                if (empty($subcat)) {
-                                    $subcatidnumber = implode(EVENTOCOURSECREATION_IDNUMBER_DELIMITER, $modnumbers) . '.' . $period;
-                                    $subcat = self::get_subcategory_by_idnumber($subcatidnumber);
-                                    // Create category.
-                                    if (empty($subcat)) {
-                                        $subcat = $this->create_subcategory($this->create_period_category_name($period), $cat->id, $subcatidnumber);
-                                    }
-                                }
-
-                                // Get existing course.
-                                $moodlecourse = $this->get_course_by_idnumber($event->anlassNummer, $subcat->id, $catoptions);
-
-                                if (!$moodlecourse) {
-                                    // Filter out "Parallelanlässe" because sub events don't need courses
-                                    // Check if the event is a sub event
-                                    if (!is_null($event->anlass_Zusatz15) && !($event->anlass_Zusatz15 === $event->idAnlass)) {
-                                        // Check if the main event for this sub event has already been created in this sync
-                                        $maineventarr = array_filter($this->mainevents, function($mainevent) use ($event) {
-                                            return $mainevent->idAnlass == $event->anlass_Zusatz15;
-                                        });
-                                        $mainevent = array_shift($maineventarr);
-
-                                        if (is_null($mainevent)) {
-                                            $limitationfilter2 = new local_evento_limitationfilter2();
-                                            $eventoanlassfilter = new local_evento_eventoanlassfilter();
-                                            $eventoanlassfilter->idAnlass = $event->anlass_Zusatz15;
-                                            $mainevent = $this->eventoservice->get_events_by_filter($eventoanlassfilter, $limitationfilter2);
-
-                                            // Check if main event still has an evento event
-                                            if (empty($mainevent) || is_null($mainevent) || $mainevent->idAnlass != $event->anlass_Zusatz15) {
-                                                // Tehere is no main event anymore
-                                                // Do nothing! Maybe delete sub enrolment?
-                                                $this->trace->output('Evento "Parallelanlass" ' . $event->anlassNummer . ' doesn\'t have a main course...');
-                                                continue;
-                                            }
-                                        }
-                                        // Get the Moodle course for this main event
-                                        // Checks if this is a new sub event for an old course
-                                        $moodlecourse = $DB->get_record_sql('SELECT * FROM {course} WHERE idnumber LIKE ?', ["%" . $mainevent->anlassNummer . "%"]);
-                                        if (!isset($moodlecourse->id)) {
-                                            $this->trace->output('Wait to add evento "Parallelanlass" ' . $event->anlassNummer . ' to it\'s main course...');
-                                            array_push($this->subcourseenrolments, $event);
-                                            continue;
-                                        }
-
-                                        // Check if the enrolment is already in the old course
-                                        if ($DB->record_exists_sql('SELECT * FROM {enrol} WHERE courseid = ? AND customtext1 = ?', [$moodlecourse->id, $event->anlassNummer])) {
-                                            $this->trace->output('"Parallelanlass" ' . $event->anlassNummer . ' already in it\'s main course...');
-                                            continue;
-                                        }
-                                        // Add sub event enrolment to main event course
-                                        $fields = $this->enrolplugin->get_instance_defaults();
-                                        // use the sub event "anlassNummer"
-                                        $fields = $this->enrolplugin->set_custom_coursenumber($fields, $event->anlassNummer);
-                                        $fields['name'] = 'Evento Parallelanlass';
-                                        $this->enrolplugin->add_instance($moodlecourse, $fields);
-                                        $this->trace->output('Evento "Parallelanlass" enrolment ' . $event->anlassNummer . ' added to it\'s main course ' . $mainevent->anlassNummer . '...');
-                                        continue;
-                                    }
-                                    // Create an empty course.
-                                    $moodlecourse = $this->create_new_course($event, $subcat->id, $setting);
-                                } 
-
-                                // Check if the event is a main event
-                                if (!is_null($event->anlass_Zusatz15) && ($event->anlass_Zusatz15 === $event->idAnlass)) {
-                                    // Add event to main course array
-                                    array_push($this->mainevents, $event);
-                                    // Check for sub event enrolments
-                                    foreach ($this->subcourseenrolments as $key => $subcourse) {
-                                        if ($subcourse->anlass_Zusatz15 === $event->idAnlass) {
-                                            // Add sub event enrolment to main event course
-                                            $fields = $this->enrolplugin->get_instance_defaults();
-                                            // use the sub event "anlassNummer"
-                                            $fields = $this->enrolplugin->set_custom_coursenumber($fields, $subcourse->anlassNummer);
-                                            $fields['name'] = 'Evento Parallelanlass';
-                                            $this->enrolplugin->add_instance($moodlecourse, $fields);
-                                            $this->trace->output('Evento "Parallelanlass" enrolment ' . $subcourse->anlassNummer . ' added to it\'s main course ' . $event->anlassNummer . '...');
-                                            // Remove sub events which have been linked to a main event
-                                            unset($this->subcourseenrolments[$key]);
-                                        }
-                                    }
-                                    if ($this->enrolplugin->instance_exists_by_eventnumber($moodlecourse, $event->anlassNummer)) {
-                                        // Main Moodle course have got already an enrolment.
-                                        continue;
-                                    }
-                                    // Add main course enrolment to main course
-                                    $fields = $this->enrolplugin->get_instance_defaults();
-                                    $this->enrolplugin->add_instance($moodlecourse, $fields);
-                                    $this->trace->output('Evento enrolment ' . $event->anlassNummer . ' added to it\'s Moodle course...');
-                                }
-
-                                if ($this->enrolplugin->instance_exists_by_eventnumber($moodlecourse, $event->anlassNummer)) {
-                                    // Main Moodle course have got already an enrolment.
-                                    continue;
-                                }
-                                // continue with normal course creation process
-
-                                // Add Evento enrolment instance ONLY if the instance is not in the course.
-                                if (isset($moodlecourse) && isset($this->enrolplugin) && enrol_is_enabled('evento')) {
-                                    $fields = $this->enrolplugin->get_instance_defaults();
-                                    if (in_array("gm", $catoptions)) {
-                                        // for "gemeinsame Module" add enrolment with alternative event number.
-                                        $fields = $this->enrolplugin->set_custom_coursenumber($fields, $event->anlassNummer);
-                                        $fields['name'] = 'Evento ' . $event->anlassNummer;
-                                    }
-                                    $this->enrolplugin->add_instance($moodlecourse, $fields);
-                                    $this->trace->output('Evento enrolment ' . $event->anlassNummer . ' added to it\'s Moodle course...');
-                                }
-                            } catch (SoapFault $fault) {
-                                debugging("Soapfault : ". $fault->__toString());
-                                $this->trace->output("...evento course synchronisation aborted unexpected with a soapfault during "
-                                                    . "sync of catid: {$cat->id}; eventnr.:{$event->anlassNummer};");
-                                if (in_array($fault->faultcode, $this->stopsoapfaultcodes)) {
-                                    // Stop execution.
-                                    $this->trace->finished();
-                                    return 1;
-                                }
-                            } catch (Exception $ex) {
-                                debugging("Category sync with id {$cat->id}; eventnr.:{$event->anlassNummer} aborted with error: ". $ex->getMessage());
-                                $this->trace->output("...evento course synchronisation aborted unexpected during "
-                                                    . "sync of catid: {$cat->id}; eventnr.:{$event->anlassNummer};");
-                            } catch (Throwable $ex) {
-                                debugging("Category sync with id {$cat->id}; eventnr.:{$event->anlassNummer} aborted with error: ". $ex->getMessage());
-                                $this->trace->output("...evento course synchronisation aborted unexpected during "
-                                                    . "sync of catid: {$cat->id}; eventnr.:{$event->anlassNummer};");
-                            }
-                        }
-                        unset($subcat);
-
-                    } catch (SoapFault $fault) {
-                        debugging("Soapfault : ". $fault->__toString());
-                        $this->trace->output("...evento course synchronisation aborted unexpected with a soapfault during "
-                                            . "sync of catid: {$cat->id}; eventnr.:{$modn};");
-                        if (in_array($fault->faultcode, $this->stopsoapfaultcodes)) {
-                            // Stop execution.
-                            $this->trace->finished();
-                            return 1;
-                        }
-                    } catch (Exception $ex) {
-                        debugging("Category sync with id {$cat->id}; eventnr.:{$modn} aborted with error: ". $ex->getMessage());
-                        $this->trace->output("...evento course synchronisation aborted unexpected during "
-                                            . "sync of catid: {$cat->id}; eventnr.:{$modn};");
-                    } catch (Throwable $ex) {
-                        debugging("Category sync with id {$cat->id}; eventnr.:{$modn} aborted with error: ". $ex->getMessage());
-                        $this->trace->output("...evento course synchronisation aborted unexpected during "
-                                            . "sync of catid: {$cat->id}; eventnr.:{$modn};");
-                    }
-                }
+                // Handle remaining sub-events
+                $this->process_remaining_subcourses();
+                
+            } catch (Exception $e) {
+                $this->trace->output("Error during synchronization: " . $e->getMessage());
+                return 1;
             }
-        } catch (SoapFault $fault) {
-            debugging("Error Soapfault: ". $fault->__toString());
-            $this->trace->output("...evento course synchronisation aborted unexpected with a soapfault");
+            
+            $this->trace->output('Evento course synchronisation finished successfully');
             $this->trace->finished();
-            return 1;
-        } catch (Exeption $ex) {
-            debugging("Error: ". $ex->getMessage());
-            $this->trace->output('... evento course synchronisation aborted unexpected');
-            $this->trace->finished();
-            return 1;
-        } catch (Throwable $ex) {
-            debugging("Error: ". $ex->getMessage());
+            return 0;
+
+        } catch (Exception $e) {
+            debugging("Fatal error: " . $e->getMessage());
             $this->trace->output('... evento course synchronisation aborted unexpected');
             $this->trace->finished();
             return 1;
         }
-        $syncend = microtime(true);
-        $synctime = $syncend - $syncstart;
-        $debugmessage = "Evento course syncronisation process time: {$synctime}";
-        debugging($debugmessage, DEBUG_DEVELOPER);
-        $trace->output($debugmessage);
-
-        $this->trace->output('Evento course synchronisation finished...');
-        $this->trace->finished();
-        return 0;
     }
 
     /**
-     * Get categories with a defined idnumber prefix
-     *
-     * @param string $catidnprefix prefix of the cat idnumber
-     * @return array of stdClass objects of categories
+     * Process a single category and its events
      */
-    public static function get_categories($catidnprefix) {
-        $whereclause = "UPPER(cc.idnumber) like UPPER(:catidnprefix)";
-        $params = array('catidnprefix' => $catidnprefix . "%");
-        $result = self::get_category_records($whereclause, $params);
+    protected function process_category($category, $force) {
+        $this->currentSubcategory = null;
+        $this->currentPeriodName = null;
 
-        // Exclude Categories with period like .HS17 or .FS17.
-        $result = array_filter($result,
-                            function ($var) {
-                                return (!stripos($var->idnumber, '.' . EVENTOCOURSECREATION_AUTUMNTERM_PREFIX)
-                                        && !stripos($var->idnumber, '.' . EVENTOCOURSECREATION_SPRINGTERM_PREFIX));
-                            }
-        );
+        $setting = local_eventocoursecreation_setting::get($category->id);
+        if (!$force && ($setting->enablecatcoursecreation != 1 || !$this->is_creation_allowed($setting))) {
+            return;
+        }
 
-        return $result;
+        $events = $this->get_category_events($category);
+        foreach ($events as $event) {
+            try {
+                $this->process_event($event, $category, $setting);
+            } catch (Exception $e) {
+                $this->trace->output("Error processing event {$event->anlassNummer}: " . $e->getMessage());
+            }
+        }
     }
 
     /**
-     * Check if the creation is in a timeslot for the creation.
+     * Process a single event for course creation
      *
-     * @param local_eventocoursecreation_setting $setting record of eventocoursecreation
-     * @return bool true if creation should proceed
+     * @param object $event The event to process
+     * @param object $category The category context
+     * @param object $setting Category settings
      */
-    public function is_creation_allowed(local_eventocoursecreation_setting $setting) {
-        $allowed = false;
+    protected function process_event($event, $category, $setting, $force = false) {
+        // Existing initialization code...
+    
+        // Check if this is a main event or sub-event
+        if (isset($event->anlass_Zusatz15) && $event->anlass_Zusatz15 !== $event->idAnlass) {
+            $this->handle_sub_event($event);
+            return;
+        }
+    
+        // Check if the course already exists.
+        $course = $this->get_existing_course($event->idAnlass, $category->id, $event->anlassNummer);
+        if ($course) {
+            $this->trace->output("Course already exists for event {$event->anlassNummer}. Skipping.");
+            return;
+        }
+    
+        // Create a new course.
+        $course = $this->create_new_course($event, $category, $setting, $force);
+    
+        if ($course) {
+            $this->setup_course_enrollments($course, $event);
+        }
+    }
+    
 
-        // Init time.
-        $now = time();
-        $nowday = (int)date("d", $now);
-        $nowmonth = (int)date("m", $now);
-        $nowyear = (int)date("y", $now);
-        $now = mktime(0, 0, 0, $nowmonth, $nowday, $nowyear);
-
-        // Spring Term.
-        // Set starttime for the spring.
-        $springday = (int)$setting->starttimespringtermday;
-        $springmonth = (int)$setting->starttimespringtermmonth;
-        $springyear = $nowyear;
-        $springtime = mktime(0, 0, 0, $springmonth, $springday, $springyear);
-
-        // Set endtime for the spring.
-        $springendday = (int)$this->config->endtimespringtermday;
-        $springendmonth = (int)$this->config->endtimespringtermmonth;
-        $springendyear = $nowyear;
-        $springendtime = mktime(0, 0, 0, $springendmonth, $springendday, $springendyear);
-
-        // Set the timeslot correclty.
-        if ($springtime > $springendtime) {
-            if ($now < $springtime) {
-                // Set springtime one year back, to check if we are in a valid timeslot.
-                $springyear = $springyear - 1;
-                $springtime = mktime(0, 0, 0, $springmonth, $springday, $springyear);
-                debugging('Set springtime one year back, to check if we are in a valid timeslot.; allowed:' . var_export($allowed, true) .
-                            '; now:' . $now . '; springtime' . $springtime, DEBUG_DEVELOPER);
-            } else {
-                // Set end time + 1 year;
-                // Set springendtime one year forward to create a valid timeslot.
-                $springendyear = $springyear + 1;
-                $springendtime = mktime(0, 0, 0, $springendmonth, $springendday, $springendyear);
-                debugging('Set springendtime one year forward to create a valid timeslot.; allowed:' . var_export($allowed, true) .
-                            '; now:' . $now . '; springendtime' . $springendtime, DEBUG_DEVELOPER);
+    /**
+     * Handle processing of sub-events (parallel courses)
+     */
+    protected function handle_sub_event($event) {
+        // Check if main course exists first
+        if (isset($event->anlass_Zusatz15)) {
+            $mainCourse = $this->get_existing_course($event->anlass_Zusatz15, null, null);
+            if ($mainCourse) {
+                $this->create_enrollment_instance($mainCourse, $event);
+                $this->trace->output("Added enrollment for sub-event {$event->anlassNummer}");
+                return;
             }
         }
+        
+        // Queue for later if main course not found
+        $this->subcourseenrolments[] = $event;
+        $this->trace->output("Queued sub-event {$event->anlassNummer} for later processing");
+    }
 
-        // Check srping term.
-        if ($now >= $springtime && ($now <= $springendtime)) {
-            if ((int)$setting->execonlyonstarttimespringterm == 1) {
-                if ($now === $springtime) {
-                    $allowed = true;
-                    debugging('execonlyonstarttimespringterm and now === springtime; allowed:' . var_export($allowed, true) .
-                                '; now:' . $now . '; springtime' . $springtime, DEBUG_DEVELOPER);
-                } else {
-                    $allowed = false;
-                    debugging('execonlyonstarttimespringterm and now != springtime; allowed:' . var_export($allowed, true) .
-                                '; now:' . $now . '; springtime' . $springtime, DEBUG_DEVELOPER);
-                }
-            } else {
-                $allowed = true;
-                debugging('execonlyonstarttimespringterm = 0; allowed:' . var_export($allowed, true) .
-                            '; now:' . $now . '; springtime' . $springtime, DEBUG_DEVELOPER);
-            }
-        } else {
-            $allowed = false;
-            debugging('not in spring timeslot; allowed:' . var_export($allowed, true) .
-                        '; now:' . $now . '; springtime' . $springtime, DEBUG_DEVELOPER);
+    /**
+     * Process any remaining queued sub-events after main sync
+     */
+    protected function process_remaining_subcourses() {
+        if (empty($this->subcourseenrolments)) {
+            return;
         }
 
-        // Autum Term.
-        // if already allowed, skip the autumn term check.
-        if (!$allowed) {
-            $autumnday = (int)$setting->starttimeautumntermday;
-            $autumnmonth = (int)$setting->starttimeautumntermmonth;
-            $autumnyear = $nowyear;
-            $autumntime = mktime(0, 0, 0, $autumnmonth, $autumnday, $autumnyear);
-
-            // Set endtime for the autumn.
-            $autumnendday = (int)$this->config->endtimeautumntermday;
-            $autumnendmonth = (int)$this->config->endtimeautumntermmonth;
-            $autumnendyear = $nowyear;
-            $autumnendtime = mktime(0, 0, 0, $autumnendmonth, $autumnendday, $autumnendyear);
-
-            // Set the timeslot correclty.
-            if ($autumntime > $autumnendtime) {
-                if ($now < $autumntime) {
-                    // Set autumntime one year back, to check if we are in a valid timeslot.
-                    $autumnyear = $autumnyear - 1;
-                    $autumntime = mktime(0, 0, 0, $autumnmonth, $autumnday, $autumnyear);
-                    debugging('Set autumntime one year back, to check if we are in a valid timeslot.; allowed:' . var_export($allowed, true) .
-                                '; now:' . $now . '; autumntime' . $autumntime, DEBUG_DEVELOPER);
+        $this->trace->output('Processing remaining queued sub-events...');
+        
+        foreach ($this->subcourseenrolments as $subevent) {
+            if (isset($subevent->anlass_Zusatz15)) {
+                $mainCourse = $this->get_existing_course($subevent->anlass_Zusatz15, null, null);
+                if ($mainCourse) {
+                    $this->create_enrollment_instance($mainCourse, $subevent);
+                    $this->trace->output("Added enrollment for queued sub-event {$subevent->anlassNummer}");
                 } else {
-                    // Set autumnendtime one year forward to create a valid timeslot.
-                    $autumnendyear = $autumnendyear + 1;
-                    $autumnendtime = mktime(0, 0, 0, $autumnendmonth, $autumnendday, $autumnendyear);
-                    debugging('Set autumnendtime one year forward to create a valid timeslot.; allowed:' . var_export($allowed, true) .
-                                '; now:' . $now . '; autumnendtime' . $autumnendtime, DEBUG_DEVELOPER);
+                    $this->trace->output("Warning: Could not find main course for sub-event {$subevent->anlassNummer}");
                 }
             }
-
-            // Check the autumn term.
-            if ($now >= $autumntime && ($now <= $autumnendtime)) {
-                if ((int)$setting->execonlyonstarttimeautumnterm == 1) {
-                    if ($now === $autumntime) {
-                        $allowed = true;
-                        debugging('execonlyonstarttimeautumnterm and now === autumntime; allowed:' . var_export($allowed, true) .
-                                    '; now:' . $now . '; autumntime' . $autumntime, DEBUG_DEVELOPER);
-                    } else {
-                        $allowed = false;
-                        debugging('execonlyonstarttimeautumnterm and now != autumntime; allowed:' . var_export($allowed, true) .
-                                    '; now:' . $now . '; autumntime' . $autumntime, DEBUG_DEVELOPER);
-                    }
-                } else {
-                    $allowed = true;
-                    debugging('execonlyonstarttimeautumnterm = 0; allowed: ' . var_export($allowed, true) .
-                                '; now:' . $now . '; autumntime:' . $autumntime, DEBUG_DEVELOPER);
-                }
-            } else {
-                $allowed = false;
-                debugging('not in autumn timeslot; allowed:' . var_export($allowed, true) .
-                            '; now:' . $now . '; autumntime:' . $autumntime, DEBUG_DEVELOPER);
-            }
         }
-        return $allowed;
     }
 
     /**
-     * Get subcategories with a defined idnumber prefix
-     *
-     * @param string $subcatname name of the subcategory
-     * @param int $parentcatid category id of the parent
-     * @return array of stdClass objects of categories
+     * Get a single category and its mapping
+     * 
+     * @param array $veranstalter Array of veranstalter objects 
+     * @param int $categoryid The category ID to fetch
+     * @return array The processed category array
      */
-    public static function get_subcategory_by_name($subcatname, $parentcatid) {
-
-        if (!isset($parentcatid) || !isset($subcatname)) {
-            return null;
-        }
-        $whereclause = "(UPPER(cc.name) = UPPER(:subcatname)) AND (cc.parent = :parentcatid)";
-        $params = array('subcatname' => $subcatname, 'parentcatid' => $parentcatid );
-        $result = self::get_category_records($whereclause, $params);
-
-        return $result;
-    }
-
-    /**
-     * Get subcategories with a defined idnumber prefix
-     *
-     * @param string $idnumber idnumber of the categorie
-     * @return stdClass object of the category
-     */
-    public static function get_subcategory_by_idnumber($idnumber) {
-
-        if (empty($idnumber)) {
-            return null;
-        }
-        $whereclause = "(UPPER(cc.idnumber) = UPPER(:idnumber))";
-        $params = array('idnumber' => $idnumber);
-        $result = self::get_category_records($whereclause, $params);
-        $return = reset($result);
-
-        return $return;
-    }
-
-    /**
-     * Extract the evento module numbers from the idnumber
-     * delimited by | ignore numbers without the module prefix
-     *
-     * @param string $idnumber idnumber of a category
-     * @return array array of strings with module numbers
-     */
-    public static function get_module_ids($idnumber) {
-        $result = array();
-        // Skip Options.
-        $result = explode(EVENTOCOURSECREATION_IDNUMBER_OPTIONS_DELIMITER, $idnumber);
-        // First "Option are always idnumbers".
-        $result = reset($result);
-        $result = explode(EVENTOCOURSECREATION_IDNUMBER_DELIMITER, $result);
-        $idnprefix = EVENTOCOURSECREATION_IDNUMBER_PREFIX;
-        $result = array_filter($result,
-                            function ($var) use ($idnprefix) {
-                                return (strncasecmp($var, $idnprefix, strlen($idnprefix)) == 0);
-                            }
-        );
-
-        return $result;
-    }
-
-    /**
-     * Extract the options from the idnumber
-     *
-     * @param string $idnumber
-     * @return array
-     */
-    protected static function get_coursecat_options($idnumber) {
-        $result = array();
-        $result = explode(EVENTOCOURSECREATION_IDNUMBER_OPTIONS_DELIMITER, $idnumber);
-        // Skipt First element, Because these are the evento idnumbers.
-        array_shift($result);
-        return $result;
-    }
-
-    /**
-     * Extract the evento period (term) from the idnumber
-     * assume it is the third part of the eventumber separated by '.'
-     * Sets a default Value the period not matches a valid pattern
-     *
-     * @param string $eventnumber idnumber of a category
-     * @param int $eventstarttime starttimestamp of the event
-     * @return string period
-     */
-    public static function get_module_period($eventnumber, $eventstarttime = null) {
-        $modnumbers = array();
-        $result = null;
-
-        if (isset($eventnumber)) {
-            // Filter to get the substring with HS or FS prefix.
-            $modnumbers = explode('.', $eventnumber);
-            $modnumbers = array_filter($modnumbers,
-                                function ($var) {
-                                    return (strtoupper(substr($var, 0, 2 )) == EVENTOCOURSECREATION_AUTUMNTERM_PREFIX
-                                            || strtoupper(substr($var, 0, 2 )) == EVENTOCOURSECREATION_SPRINGTERM_PREFIX
-                                            || substr($var, 0, 2) == EVENTOCOURSECREATION_EMBA_PREFIX);
-                                }
-            );
-            $result = reset($modnumbers);
-        }
-
-        // Is the term set or valid ?
-        if (!isset($result) || (!stristr($result, EVENTOCOURSECREATION_AUTUMNTERM_PREFIX)
-            && !stristr($result, EVENTOCOURSECREATION_SPRINGTERM_PREFIX))) {
-            // Get the default term string like HS17 or FS17.
-            if (isset($eventstarttime)) {
-                $month = date('n', $eventstarttime);
-                $year = date('y', $eventstarttime);
-                $fsmonths = array('2', '3', '4', '5', '6', '7');
-                if (in_array($month, $fsmonths)) {
-                    $term = EVENTOCOURSECREATION_SPRINGTERM_PREFIX;
-                } else {
-                    $term = EVENTOCOURSECREATION_AUTUMNTERM_PREFIX;
-                }
-                $result = $term . $year;
-            }
-        }
-
-        return $result;
-    }
-
-    /**
-     * Gets valid future events to be created
-     *
-     * @param string $modn evento module prefix
-     * @return array filtered array of evento events
-     */
-    protected function get_future_events($modn) {
-
-        $limitationfilter2 = new local_evento_limitationfilter2();
-        $eventoanlassfilter = new local_evento_eventoanlassfilter();
-
-        $limitationfilter2->thefromdate = date(LOCAL_EVENTO_DATETIME_FORMAT, strtotime('-1 year'));
-        $limitationfilter2->thetodate = date(LOCAL_EVENTO_DATETIME_FORMAT, time());
-        $limitationfilter2->themaxresultvalue = 10000;
-        $limitationfilter2->sortfield = 'anlassNummer';
-
-        $eventoanlassfilter->anlassnummer = $modn . '%';
-        $eventoanlassfilter->idanlasstyp = local_evento_idanlasstyp::MODULANLASS;
-
-        $events = local_evento_evento_service::to_array($this->eventoservice->get_events_by_filter($eventoanlassfilter, $limitationfilter2));
-        $this->modnrprefix = $modn;
-        $result = array_filter($events, array($this, 'filter_valid_create_events'));
-        $this->modnrprefix = null;
-
-        return $result;
-    }
-
-    /**
-     * Filter methode to filter events, which are in the future with
-     * active enrolments
-     *
-     * @param array $event array of evento
-     * @return bool
-     */
-    protected function filter_valid_create_events($var) {
-        $return = false;
-        $now = time();
-
-        // Check if this event is from the same course of studies?.
-        if (isset($this->modnrprefix)) {
-            $shortmodnr = str_replace($this->modnrprefix, "", ($var->anlassNummer));
-            // is the next character in lower case? -> so it is another course of studies.
-            if (!ctype_lower(substr($shortmodnr, 0, 1))) {
-                $return = true;
-            }
-        }
-
-        // Has start date?.
-        if ($return && empty($var->anlassDatumVon)) {
-            $return = false;
-        }
-
-        // Future start date.
-        $fromdate = strtotime($var->anlassDatumVon);
-        if ($return && ($fromdate < $now)) {
-            $return = false;
-        }
-        if ($return) {
-            // Not "Abgesagt".
-            // Todo move value to config.
-            if ($var->idAnlassStatus == '10270') {
-                $return = false;
-            }
-        }
-        /* Removed, because we can set the creation start time now (v2.0). May be we do a option for this in the future.
-        if ($return) {
-            // Has enrolments?
-            $eventoenrolments = local_evento_evento_service::to_array($this->eventoservice->get_enrolments_by_eventid($var->idAnlass));
-            if (empty($eventoenrolments)) {
-                $return = false;
-            }
-        }
-        */
-        return $return;
-    }
-
-
-    /**
-     * Create a new empty hidden course in a category
-     *
-     * @param array $event array of evento
-     * @param int $catid category to create
-     * @param local_eventocoursecreation_setting $setting record of eventocoursecreation
-     * @return object new course instance
-     */
-    protected function create_new_course($event, $categoryid, local_eventocoursecreation_setting $setting) {
-        global $CFG, $USER;
-
+    protected function get_single_category($veranstalter, $categoryid) {
+        global $DB;
+        
+        $categories = array();
+        $this->categoryVeranstalterMap = array();
+        
         try {
-            require_once("$CFG->dirroot/course/lib.php");
-            $course = null;
-            $restoredata = null;
-            $newcourse = new stdClass();
-
-            if (!empty($event->anlassNummer)) {
-                $newcourse->idnumber = trim($event->anlassNummer);
-            } else {
-                throw new moodle_exception('noeventnumberset', 'local_eventocoursecreation', null, null,
-                                            'no "anlassNummer" set to create an new course');
+            $category = $DB->get_record('course_categories', ['id' => $categoryid], '*', MUST_EXIST);
+            
+            if (empty($category->idnumber)) {
+                $this->trace->output("Warning: Category {$categoryid} has no idnumber set");
+                return array();
             }
-            $naming = new local_eventocoursecreation_course_naming($event->anlassBezeichnung, $event->anlassNummer);
+            
+            foreach ($veranstalter as $ver) {
+                if (!empty($ver->benutzerVorname) && $ver->benutzerVorname === $category->idnumber) {
+                    $this->categoryVeranstalterMap[$ver->benutzerVorname] = $ver;
+                    $categories[$category->id] = $category;
+                    $this->trace->output("Mapped category '{$category->name}' to OE '{$ver->benutzerVorname}'");
+                    break;
+                }
+            }
+            
+            if (empty($categories)) {
+                $this->trace->output("Warning: No matching Veranstalter found for category {$category->name}");
+            }
+            
+        } catch (Exception $e) {
+            $this->trace->output("Error processing category {$categoryid}: " . $e->getMessage());
+        }
+        
+        return $categories;
+    }
+
+    /**
+     * Process all categories and map to veranstalter
+     * 
+     * @param array $veranstalter Array of veranstalter objects
+     * @return array Mapped categories
+     */
+    protected function process_all_categories($veranstalter) {
+        global $DB;
+        
+        $categories = array();
+        $this->categoryVeranstalterMap = array();
+        
+        $existingCategories = $DB->get_records('course_categories', 
+            array('parent' => 0), 
+            '', 
+            'id, idnumber, name'
+        );
+
+        $processedOEs = array();
+        
+        foreach ($veranstalter as $ver) {
+            if (empty($ver->benutzerVorname) || isset($processedOEs[$ver->benutzerVorname])) {
+                continue;
+            }
+            
+            $processedOEs[$ver->benutzerVorname] = true;
+            
+            // Look for existing category
+            foreach ($existingCategories as $category) {
+                if (!empty($category->idnumber) && $category->idnumber === $ver->benutzerVorname) {
+                    $categories[$category->id] = $category;
+                    $this->categoryVeranstalterMap[$ver->benutzerVorname] = $ver;
+                    break;
+                }
+            }
+        }
+        
+        return $categories;
+    }
+
+    /**
+     * Get or create subcategory for event periods
+     * 
+     * @param object $event The evento event
+     * @param object $category Parent category
+     * @param object $setting Category settings
+     * @return object The target category
+     */
+    protected function get_period_subcategory($event, $category, $setting) {
+        global $DB;
+        
+        if (empty($event->anlassDatumVon)) {
+            return $category;
+        }
+
+        $periodName = $this->determine_period_name($event, $setting);
+        
+        if ($this->currentSubcategory && $this->currentPeriodName === $periodName) {
+            return $this->currentSubcategory;
+        }
+        
+        $subcategory = $DB->get_record('course_categories', array(
+            'parent' => $category->id,
+            'name' => $periodName
+        ));
+        
+        if (!$subcategory) {
+            try {
+                $categorydata = new stdClass();
+                $categorydata->name = $periodName;
+                $categorydata->idnumber = $category->idnumber . '_' . $periodName;
+                $categorydata->parent = $category->id;
+                $categorydata->visible = 1;
+                
+                $subcategory = core_course_category::create($categorydata);
+                $this->trace->output("Created new period subcategory: {$periodName}");
+            } catch (Exception $e) {
+                $this->trace->output("Failed to create period subcategory {$periodName}: " . $e->getMessage());
+                return $category;
+            }
+        }
+        
+        $this->currentSubcategory = $subcategory;
+        $this->currentPeriodName = $periodName;
+        
+        return $subcategory;
+    }
+
+    /**
+     * Determine period name based on event date and settings
+     */
+    protected function determine_period_name($event, $setting) {
+        $startDate = strtotime($event->anlassDatumVon);
+        $year = date('y', $startDate);
+        $fullYear = date('Y', $startDate);
+        
+        if (!empty($setting->useyearcategories)) {
+            return $fullYear;
+        }
+        
+        $month = (int)date('n', $startDate);
+        return ($month >= 8) ? "HS{$year}" : "FS{$year}";
+    }
+
+    /**
+     * Get events for a specific category
+     */
+    protected function get_category_events($category) {
+        if (isset($this->categoryVeranstalterMap[$category->idnumber])) {
+            $ver = $this->categoryVeranstalterMap[$category->idnumber];
+            try {
+                return $this->eventoservice->get_events_by_veranstalter_years($ver->benutzerVorname);
+            } catch (Exception $e) {
+                $this->trace->output("Error retrieving events for category {$category->name}: " . $e->getMessage());
+                return array();
+            }
+        }
+        return array();
+    }
+
+    /**
+     * Create a new course from an evento event
+     */
+    protected function create_new_course($event, $category, $setting, $force = false) {
+        global $CFG, $DB;
+    
+        try {
+            $targetCategory = $this->get_period_subcategory($event, $category, $setting);
+    
+            $naming = new local_eventocoursecreation_course_naming(
+                $event->anlassBezeichnung,
+                $event->anlassNummer,
+                strtotime($event->anlassDatumVon),
+                $event->idAnlass,
+                $event->anlassVeranstalter
+            );
+    
+            $newcourse = new stdClass();
+            $newcourse->idnumber = (string)$event->idAnlass;
             $newcourse->fullname = $naming->create_long_course_name();
             $newcourse->shortname = $naming->create_short_course_name();
-            $newcourse->category = $categoryid;
-            if (!empty($event->anlassDatumVon)) {
-                $newcourse->startdate = strtotime($event->anlassDatumVon);
-            }
-            if (!empty($event->anlassDatumBis)) {
-                $newcourse->enddate = strtotime($event->anlassDatumBis);
-            }
-            if (!empty($setting->setcustomcoursestarttime)){
-                $newcourse->startdate = $setting->starttimecourse;
-            } 
-            $newcourse->visible = $setting->coursevisibility;
-            $newcourse->newsitems = $setting->newsitemsnumber;
-            $newcourse->numsections = $setting->numberofsections;
 
-            // Use a template?
-            if ((int)$setting->enablecoursetemplate == 1) {
-                $restoredata = $this->get_restore_content_dir($setting->templatecourse);
-                if (isset($restoredata)) {
-                    $newcourse->numsections = 0;
-                }
+            if (empty($newcourse->shortname)) {
+                $this->trace->output("Cannot create course because a unique shortname could not be generated without conflict.");
+                return null;
             }
-
+    
+            // Check if a course with the same shortname and enrollment exists
+            if ($this->course_with_same_shortname_and_enrollment_exists($newcourse->shortname, $event->idAnlass)) {
+                $this->trace->output("Course with shortname {$newcourse->shortname} and associated enrollment from the same Evento event already exists. Skipping creation.");
+                return null;
+            }
+    
+            $newcourse->category = $targetCategory->id;
+    
+            $this->set_course_dates($newcourse, $event, $setting);
+            $this->set_course_settings($newcourse, $setting);
+    
+            require_once($CFG->dirroot . "/course/lib.php");
+    
             $course = create_course($newcourse);
+            $this->moodlecourses[$event->idAnlass] = $course;
+    
+            if ($setting->enablecoursetemplate == 1 && !empty($setting->templatecourse)) {
+                $this->restore_template_content($course, $setting->templatecourse);
+            }
+    
+            $this->trace->output("Created new course: {$course->shortname}");
+            return $course;
+    
+        } catch (Exception $e) {
+            $this->trace->output("Error creating course for event {$event->anlassNummer}: " . $e->getMessage());
+            return null;
+        }
+    }
+    
 
-            // Restore a course from a template.
-            if (!empty($restoredata)) {
-                // Clear new created empty courses for a correct import (delete sections WITH content).
-                $rc = new restore_controller($restoredata, $course->id, backup::INTERACTIVE_NO,
-                    backup::MODE_IMPORT, $USER->id, backup::TARGET_CURRENT_ADDING);
+    /**
+     * Set the start and end dates for a course
+     */
+    protected function set_course_dates($course, $event, $setting) {
+        if (!empty($event->anlassDatumVon)) {
+            $course->startdate = strtotime($event->anlassDatumVon);
+        }
+        if (!empty($event->anlassDatumBis)) {
+            $course->enddate = strtotime($event->anlassDatumBis);
+        }
+        
+        if (!empty($setting->setcustomcoursestarttime)) {
+            $course->startdate = $setting->starttimecourse;
+        }
+    }
 
-                // Check if the format conversion must happen first.
-                if ($rc->get_status() == backup::STATUS_REQUIRE_CONV) {
-                    $rc->convert();
+    /**
+     * Set course visibility and other settings
+     */
+    protected function set_course_settings($course, $setting) {
+        $course->visible = $setting->coursevisibility;
+        $course->newsitems = $setting->newsitemsnumber;
+        $course->numsections = $setting->numberofsections;
+    }
+
+    /**
+     * Setup enrollments for a course
+     */
+    protected function setup_course_enrollments($course, $event) {
+        global $DB;
+        
+        try {
+            // Process any pending sub-events
+            foreach ($this->subcourseenrolments as $key => $subcourse) {
+                if ($subcourse->anlass_Zusatz15 === $event->idAnlass) {
+                    $params = [
+                        'courseid' => $course->id,
+                        'customint1' => $subcourse->idAnlass,
+                        'enrol' => 'evento'
+                    ];
+                    if (!$DB->record_exists('enrol', $params)) {
+                        $this->create_enrollment_instance($course, $subcourse);
+                    }
+                    unset($this->subcourseenrolments[$key]);
                 }
-                if ($rc->execute_precheck()) {
-                    $rc->execute_plan();
-                    debugging("Restored content for course {$course->shortname}", DEBUG_DEVELOPER);
-                } else {
-                    debugging("Error during restoring to the course {$course->shortname};");
-                    $this->trace->output("Error during restoring to the course {$course->shortname};");
-                }
-                $rc->destroy();
             }
 
-        } catch (moodle_exception $ex) {
-            if (($ex->errorcode == 'courseidnumbertaken') || ($ex->errorcode == 'shortnametaken')) {
-                // Course already exists not needed to be created.
-                debugging("{$ex->errorcode} for course shortname {$newcourse->shortname}", DEBUG_DEVELOPER);
-                return $course;
-            } else {
-                throw $ex;
+            // Create main enrollment if needed
+            $params = [
+                'courseid' => $course->id,
+                'customint1' => $event->idAnlass,
+                'enrol' => 'evento'
+            ];
+            if (!$DB->record_exists('enrol', $params)) {
+                $this->create_enrollment_instance($course, $event);
             }
+
+        } catch (Exception $e) {
+            $this->trace->output("Error setting up enrollments: " . $e->getMessage());
         }
-        if (isset($return)) {
-            $this->moodlecourses[$return->idnumber] = $return;
+    }
+
+    /**
+     * Create an enrollment instance for an event
+     */
+    protected function create_enrollment_instance($course, $event) {
+        $fields = $this->enrolplugin->get_instance_defaults();
+        $fields['customint1'] = $event->idAnlass;
+        $fields['customtext1'] = $event->anlassNummer;
+
+        if (isset($event->anlass_Zusatz15) && $event->anlass_Zusatz15 !== $event->idAnlass) {
+            $fields['name'] = 'Evento Parallelanlass';
         }
+
+        if ($this->enrolplugin->add_instance($course, $fields)) {
+            $this->trace->output("Added enrollment for event {$event->anlassNummer}");
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Get existing course by evento ID
+     */
+    protected function get_existing_course($eventoid, $categoryid = null, $anlassNummer = null) {
+        global $DB;
+        
+        if (isset($this->moodlecourses[$eventoid])) {
+            return $this->moodlecourses[$eventoid];
+        }
+
+        $params = array('idnumber' => (string)$eventoid);
+        if ($categoryid) {
+            $params['category'] = $categoryid;
+        }
+        
+        $course = $DB->get_record('course', $params);
+        if ($course) {
+            $this->moodlecourses[$eventoid] = $course;
+        }
+        
         return $course;
+    }
+
+    protected function course_with_same_shortname_and_enrollment_exists($shortname, $eventoid) {
+        global $DB;
+    
+        // Check if a course with the same shortname exists
+        $course = $DB->get_record('course', array('shortname' => $shortname), '*', IGNORE_MULTIPLE);
+        if ($course) {
+            // Check if the course has an enrollment from the same Evento event
+            $enrolInstances = $DB->get_records('enrol', array(
+                'courseid' => $course->id,
+                'enrol' => 'evento',
+                'customint1' => $eventoid
+            ));
+            if (!empty($enrolInstances)) {
+                return true;
+            }
+        }
+        return false;
+    }    
+
+    /**
+     * Restore template content to a new course
+     * 
+     * @param object $course Course to restore content to
+     * @param int $templateid ID of template course
+     */
+    protected function restore_template_content($course, $templateid) {
+        global $CFG, $DB, $USER;
+        
+        try {
+            require_once($CFG->dirroot . '/backup/util/includes/backup_includes.php');
+            require_once($CFG->dirroot . '/backup/util/includes/restore_includes.php');
+            
+            // Get backup directory
+            $backupdir = $this->get_restore_content_dir($templateid);
+            if (!$backupdir) {
+                $this->trace->output("Could not get restore content directory for template {$templateid}");
+                return false;
+            }
+            
+            // Setup restore controller
+            $tempdir = make_backup_temp_directory($backupdir);
+            $rc = new restore_controller(
+                $backupdir,
+                $course->id,
+                backup::INTERACTIVE_NO,
+                backup::MODE_GENERAL,
+                $USER->id,
+                backup::TARGET_EXISTING_ADDING
+            );
+
+            // Configure restore settings
+            $rc->get_plan()->get_setting('users')->set_value(false);
+            $rc->get_plan()->get_setting('user_files')->set_value(false);
+            if ($rc->get_plan()->setting_exists('role_assignments')) {
+                $rc->get_plan()->get_setting('role_assignments')->set_value(false);
+            }
+            
+            // Execute restore
+            if ($rc->execute_precheck()) {
+                $rc->execute_plan();
+                $this->trace->output("Successfully restored template content to course {$course->shortname}");
+            } else {
+                $this->trace->output("Precheck failed for template restore to course {$course->shortname}");
+            }
+            
+            $rc->destroy();
+            return true;
+            
+        } catch (Exception $e) {
+            $this->trace->output("Error restoring template content: " . $e->getMessage());
+            return false;
+        }
     }
 
     /**
@@ -762,24 +622,22 @@ class local_eventocoursecreation_course_creation {
      *                           and null when there is simply nothing.
      */
     protected function get_restore_content_dir($templatecourse) {
-
         if (empty($templatecourse) || !is_numeric($templatecourse)) {
             return null;
         }
-
+        
         $errors = array();
         $dir = self::create_restore_content_dir($templatecourse, $errors);
+        
         if (!empty($errors)) {
             foreach ($errors as $key => $message) {
                 debugging("Error during get content of course id {$templatecourse}; ". $message);
                 $this->trace->output("Error during get content of course id {$templatecourse}; ". $message);
             }
             return false;
-        } else if ($dir === false) {
-            // We want to return null when nothing was wrong, but nothing was found.
-            $dir = null;
         }
-        return $dir;
+        
+        return ($dir === false) ? null : $dir;
     }
 
     /**
@@ -796,295 +654,515 @@ class local_eventocoursecreation_course_creation {
      */
     public static function create_restore_content_dir($templatecourse = null, &$errors = array()) {
         global $CFG, $DB, $USER;
-
-        $cachekey = null;
-        if (!empty($templatecourse) || is_numeric($templatecourse)) {
-            $cachekey = 'backup_id:' . $templatecourse;
-        }
-
+        
+        $cachekey = !empty($templatecourse) && is_numeric($templatecourse) ? 'backup_id:' . $templatecourse : null;
         if (empty($cachekey)) {
             return false;
         }
-
-        // If $CFG->keeptempdirectoriesonbackup is not set to true, any restore happening would
-        // automatically delete the backup directory... causing the cache to return an unexisting directory.
+        
         $usecache = !empty($CFG->keeptempdirectoriesonbackup);
-        if ($usecache) {
-            $cache = cache::make('local_eventocoursecreation', 'coursecreation');
-        }
-
-        // If we don't use the cache, or if we do and not set, or the directory doesn't exist any more.
-        if (!$usecache || (($backupid = $cache->get($cachekey)) === false || !is_dir(get_backup_temp_directory($backupid)))) {
-
-            // Use null instead of false because it would consider that the cache key has not been set.
+        $cache = $usecache ? cache::make('local_eventocoursecreation', 'coursecreation') : null;
+        
+        // Check cache or create new backup
+        if (!$usecache || 
+            ($backupid = $cache->get($cachekey)) === false || 
+            !is_dir(get_backup_temp_directory($backupid))) {
+                
             $backupid = null;
-
-            if (!empty($templatecourse) || is_numeric($templatecourse)) {
-                // Creating restore from an existing course.
-                $courseid = $DB->get_field('course', 'id', array('id' => $templatecourse), IGNORE_MISSING);
-                if (!empty($courseid)) {
-                    $bc = new backup_controller(backup::TYPE_1COURSE, $courseid, backup::FORMAT_MOODLE,
-                        backup::INTERACTIVE_NO, backup::MODE_IMPORT, $USER->id);
+            $courseid = $DB->get_field('course', 'id', array('id' => $templatecourse), IGNORE_MISSING);
+            
+            if (!empty($courseid)) {
+                try {
+                    $bc = new backup_controller(
+                        backup::TYPE_1COURSE,
+                        $courseid,
+                        backup::FORMAT_MOODLE,
+                        backup::INTERACTIVE_NO,
+                        backup::MODE_IMPORT,
+                        $USER->id
+                    );
                     $bc->execute_plan();
                     $backupid = $bc->get_backupid();
                     $bc->destroy();
-                } else {
-                    $errors['coursetorestorefromdoesnotexist'] = new lang_string('coursetorestorefromdoesnotexist',
-                                                                                    'local_eventocoursecreation');
+                } catch (Exception $e) {
+                    debugging('Error creating backup: ' . $e->getMessage());
+                    $errors['backuperror'] = $e->getMessage();
+                    return false;
                 }
+            } else {
+                $errors['coursetorestorefromdoesnotexist'] = new lang_string(
+                    'coursetorestorefromdoesnotexist',
+                    'local_eventocoursecreation'
+                );
             }
-
-            if ($usecache) {
+            
+            if ($usecache && $backupid) {
                 $cache->set($cachekey, $backupid);
             }
         }
-
-        if ($backupid === null) {
-            $backupid = false;
-        }
-        return $backupid;
+        
+        return $backupid ?? false;
     }
 
     /**
-     * Retrieves number of records from course_categories table
+     * Check if course creation is allowed based on term schedule settings
      *
-     * Records are ready for preloading context
-     * Runction similar to  coursecat->get_records() in coursecatlib.php
-     *
-     * @param string $whereclause
-     * @param array $params
-     * @return array array of stdClass objects
+     * @param local_eventocoursecreation_setting $setting Category-level settings
+     * @return bool True if creation should proceed
      */
-    protected static function get_category_records($whereclause, $params) {
-        global $DB;
+    public function is_creation_allowed($setting, $force = false) {
+        if ($force) {
+            return true;
+        }
+        $now = $this->get_midnight_timestamp();
 
-        $fields = array('id', 'idnumber', 'parent');
-        $ctxselect = context_helper::get_preload_record_columns_sql('ctx');
-        $sql = "SELECT cc.". join(',cc.', $fields). ", $ctxselect
-                FROM {course_categories} cc
-                JOIN {context} ctx ON cc.id = ctx.instanceid AND ctx.contextlevel = :contextcoursecat
-                WHERE ". $whereclause." ORDER BY cc.sortorder";
-        return $DB->get_records_sql($sql,
-                array('contextcoursecat' => CONTEXT_COURSECAT) + $params);
+        // Check spring term first
+        $spring = $this->get_term_period(
+            $setting->starttimespringtermday, 
+            $setting->starttimespringtermmonth,
+            $this->config->endtimespringtermday,
+            $this->config->endtimespringtermmonth,
+            $now
+        );
+
+        if ($this->is_in_term_period($now, $spring)) {
+            return $this->should_execute($now, $spring['start'], $setting->execonlyonstarttimespringterm);
+        }
+
+        // If not in spring term, check autumn term
+        $autumn = $this->get_term_period(
+            $setting->starttimeautumntermday,
+            $setting->starttimeautumntermmonth,
+            $this->config->endtimeautumntermday,
+            $this->config->endtimeautumntermmonth,
+            $now
+        );
+
+        if ($this->is_in_term_period($now, $autumn)) {
+            return $this->should_execute($now, $autumn['start'], $setting->execonlyonstarttimeautumnterm);
+        }
+
+        return false;
     }
 
     /**
-     * Get a course by idnumber
-     *
-     * @param string $idnumber
-     * @param int $catid optional
-     * @param string $catoptions optional options of the category
-     * @return mixed a fieldset object containing the first matching record, false or exception if error not found depending on mode
+     * Get midnight timestamp for current day
+     * 
+     * @return int Unix timestamp
      */
-    protected function get_course_by_idnumber($idnumber, $catid = null, $catoptions = null) {
-        global $DB;
+    private function get_midnight_timestamp() {
+        $now = time();
+        return mktime(0, 0, 0, date("m", $now), date("d", $now), date("Y", $now));
+    }
 
-        $result = false;
-        $params = array();
-        // Lookup course in temp. array.
-        if (array_key_exists($idnumber, $this->moodlecourses)) {
-            $result = $this->moodlecourses[$idnumber];
-        }
-        if (!$result) {
+    /**
+     * Calculate start and end timestamps for a term
+     * 
+     * @param int $startDay Term start day
+     * @param int $startMonth Term start month
+     * @param int $endDay Term end day
+     * @param int $endMonth Term end month
+     * @param int $now Current timestamp
+     * @return array Term period ['start' => timestamp, 'end' => timestamp]
+     */
+    private function get_term_period($startDay, $startMonth, $endDay, $endMonth, $now) {
+        $year = (int)date("Y", $now);
+        
+        $start = mktime(0, 0, 0, $startMonth, $startDay, $year);
+        $end = mktime(0, 0, 0, $endMonth, $endDay, $year);
 
-            if (in_array("gm", $catoptions)) {
-                // Get Module number without event nr.
-                $idnumber = self::get_modulnumber_by_idnumber($idnumber);
-                $params['idnumber'] = $idnumber . '%';
-
-                if (isset($catid) && is_numeric($catid)) {
-                    $params['category'] = $catid;
-                }
-
-                $result = $DB->get_record_sql(
-                    "SELECT c.*
-                    FROM {course} c
-                    WHERE UPPER(c.idnumber) like UPPER(:idnumber)
-                    AND c.category = :category
-                    ORDER BY c.idnumber ASC", $params, IGNORE_MULTIPLE);
+        // Adjust years if term spans calendar year boundary
+        if ($start > $end) {
+            if ($now < $start) {
+                $start = mktime(0, 0, 0, $startMonth, $startDay, $year - 1);
             } else {
-                $params['idnumber'] = $idnumber;
-                $result = $DB->get_record('course', $params);
+                $end = mktime(0, 0, 0, $endMonth, $endDay, $year + 1);
             }
         }
-        // Set lookup table.
-        if (!empty($result)) {
-            $this->moodlecourses[$result->idnumber] = $result;
-        }
-        return $result;
+
+        return array('start' => $start, 'end' => $end);
     }
 
     /**
-     * Get the module number without the event extension
-     * remove the numeric suffix like ".001" otherwise remove nothing
-     *
-     * @param string $idnumber
-     * @return string shorten $idnumber
+     * Check if current time falls within term period
      */
-    protected static function get_modulnumber_by_idnumber($idnumber) {
-
-        $result = explode('.', $idnumber);
-        $number = array_pop($result);
-        if (is_numeric($number)) {
-            $result = implode('.', $result);
-        } else {
-            $result = $idnumber;
-        }
-        return $result;
+    private function is_in_term_period($now, $term) {
+        return ($now >= $term['start'] && $now <= $term['end']);
     }
 
     /**
-     * Create the category name of a period
-     *
-     * @param string $period
-     * @param int $starttimestamp
-     * @return string array of stdClass objects
+     * Check if execution should proceed based on timing rules
      */
-    protected function create_period_category_name($period, $starttimestamp = null) {
+    private function should_execute($now, $termStart, $execOnlyOnStart) {
+        return $execOnlyOnStart ? ($now === $termStart) : true;
+    }
+
+    /**
+     * Generate preview data for potential course creation
+     * 
+     * @param int $categoryid The category to preview
+     * @return array Preview data for potential courses
+     */
+    public function get_preview_courses(int $categoryid): array {
+        if (empty($this->trace)) {
+            $this->trace = new \null_progress_trace();
+        }
+
+        if (empty($categoryid)) {
+            throw new moodle_exception('invalidcategoryid', 'local_eventocoursecreation');
+        }
+
+        try {
+            // Check prerequisites
+            if (!$this->config->enableplugin || !$this->eventoservice->init_call()) {
+                $this->trace->output('Prerequisites not met for preview generation');
+                return array();
+            }
+
+            // Get active veranstalter
+            $veranstalter = $this->eventoservice->get_active_veranstalter();
+            if (empty($veranstalter)) {
+                $this->trace->output('No active veranstalter found');
+                return array();
+            }
+            
+            // Get category data
+            $categories = $this->get_single_category($veranstalter, $categoryid);
+            if (empty($categories)) {
+                $this->trace->output('No valid category found for preview');
+                return array();
+            }
+            
+            $category = reset($categories);
+            $setting = local_eventocoursecreation_setting::get($category->id);
+            if (!$setting) {
+                $this->trace->output('No settings found for category');
+                return array();
+            }
+
+            // Get events and generate preview data
+            $events = $this->get_category_events($category);
+            if (empty($events)) {
+                $this->trace->output('No events found for category');
+                return array();
+            }
+
+            return $this->generate_preview_data($events, $category, $setting);
+
+        } catch (Exception $e) {
+            $this->trace->output("Error generating preview: " . $e->getMessage());
+            debugging('Error in get_preview_courses: ' . $e->getMessage());
+            return array();
+        }
+    }
+
+    /**
+     * Generate formatted preview data for events
+     */
+    private function generate_preview_data($events, $category, $setting) {
+        $previewData = array();
+        
+        foreach ($events as $event) {
+            // Skip sub-events
+            if (isset($event->anlass_Zusatz15) && $event->anlass_Zusatz15 !== $event->idAnlass) {
+                continue;
+            }
+
+            try {
+                if ($this->get_existing_course($event->idAnlass, $category->id)) {
+                    continue;
+                }
+
+                $targetCategory = $this->get_period_subcategory($event, $category, $setting);
+                $naming = new local_eventocoursecreation_course_naming(
+                    $event->anlassBezeichnung,
+                    $event->anlassNummer,
+                    strtotime($event->anlassDatumVon),
+                    null,
+                    $event->anlassVeranstalter
+                );
+
+                $previewData[] = array(
+                    'eventId' => $event->idAnlass,
+                    'eventNumber' => $event->anlassNummer,
+                    'name' => $naming->create_long_course_name(),
+                    'shortname' => $naming->create_short_course_name(),
+                    'categoryname' => $targetCategory->name,
+                    'startdate' => strtotime($event->anlassDatumVon),
+                    'enddate' => strtotime($event->anlassDatumBis),
+                    'settings' => array(
+                        'visibility' => $setting->coursevisibility,
+                        'newsitems' => $setting->newsitemsnumber,
+                        'numsections' => $setting->numberofsections,
+                        'usetemplate' => ($setting->enablecoursetemplate == 1 && 
+                                        !empty($setting->templatecourse))
+                    ),
+                    'subcourses' => $this->get_preview_subcourses($event, $events),
+                    'canCreate' => $setting->enablecatcoursecreation == 1 && 
+                                 $this->is_creation_allowed($setting)
+                );
+
+            } catch (Exception $e) {
+                $this->trace->output("Error processing preview for event {$event->anlassNummer}: " . 
+                                   $e->getMessage());
+                continue;
+            }
+        }
+
+        // Sort by start date
+        usort($previewData, function($a, $b) {
+            return $a['startdate'] - $b['startdate'];
+        });
+
+        return $previewData;
+    }
+
+    /**
+     * Get preview data for sub-events
+     */
+    private function get_preview_subcourses($mainEvent, $allEvents) {
+        $subcourses = array();
+        
+        foreach ($allEvents as $event) {
+            if (isset($event->anlass_Zusatz15) && 
+                $event->anlass_Zusatz15 === $mainEvent->idAnlass && 
+                $event->idAnlass !== $mainEvent->idAnlass) {
+                    
+                $subcourses[] = array(
+                    'eventId' => $event->idAnlass,
+                    'eventNumber' => $event->anlassNummer,
+                    'name' => $event->anlassBezeichnung,
+                    'startdate' => strtotime($event->anlassDatumVon),
+                    'enddate' => strtotime($event->anlassDatumBis)
+                );
+            }
+        }
+        
+        return $subcourses;
+    }
+    
+    /**
+     * Create a single course based on an event ID.
+     *
+     * @param int $eventid The ID of the event to create a course for.
+     * @param int $categoryid The ID of the category to place the course in.
+     * @param bool $force Whether to force creation regardless of settings.
+     * @param array|null $cachedEvents Optional cached events data.
+     * @return bool True on success, false on failure.
+     */
+    public function create_single_course($eventid, $categoryid, $force = false, $cachedEvents = null) {
         global $DB;
+    
+        try {
+            // Get the category.
+            $category = $DB->get_record('course_categories', array('id' => $categoryid), '*', MUST_EXIST);
+    
+            // Get the setting for the category.
+            $setting = local_eventocoursecreation_setting::get($category->id);
+    
+            // Check if creation is allowed unless force is true.
+            if (!$force && ($setting->enablecatcoursecreation != 1 || !$this->is_creation_allowed($setting))) {
+                $this->trace->output("Course creation not allowed for category {$category->name}");
+                return false;
+            }
+    
+            // Get the event data.
+            if ($cachedEvents && isset($cachedEvents[$eventid])) {
+                $event = (object)$cachedEvents[$eventid];
+            } else {
+                // Fetch the event from the Evento service.
+                $event = $this->eventoservice->get_event_by_id($eventid);
+                if (!$event) {
+                    $this->trace->output("Event with ID {$eventid} not found");
+                    return false;
+                }
+            }
+    
+            // Process the event.
+            $this->process_event($event, $category, $setting, $force);
+    
+            return true;
+    
+        } catch (Exception $e) {
+            $this->trace->output("Error creating course for event ID {$eventid}: " . $e->getMessage());
+            return false;
+        }
+    }    
 
-        // Todo generate a different categoryname for the period.
-
-        return $period;
-    }
-
-    /**
-     * Creates a new subcategory
-     *
-     * @param string $name
-     * @param int category id of the parent
-     * @param string unique idnumber
-     * @return stdClass objects of the new category
-     */
-    protected function create_subcategory($name, $parentcatid, $subcatidnumber) {
-        $newcat = new stdClass();
-        $newcat->name = $name;
-        $newcat->parent = $parentcatid;
-        $newcat->idnumber = $subcatidnumber;
-        $subcat = core_course_category::create($newcat);
-
-        return $subcat;
-    }
 }
+    
+
 
 /**
- * Class used to create long and short name for moodle
- *
- * @package    local_eventocoursecreation
- * @copyright  2018 HTW Chur Roger Barras
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * Helper class for handling course naming based on Evento data
  */
 class local_eventocoursecreation_course_naming {
-    // Plugin configuration.
-    protected $config;
-    // Normal long name of the module from evento.
-    protected $eventolongname = '';
-    // Module number from evento like "mod.bpsEA.HS18_BSC.001".
-    protected $eventomodulenumber = '';
-    // Term period of the module.
-    protected $period = '';
-    // Course of studies abrevation.
-    protected $courseofstudies = '';
-    // Module name abrevation.
-    protected $moduleabr = '';
-    // Numbertoken the evento module number.
-    protected $number = '';
+    private $eventolongname;
+    private $eventomodulenumber;
+    private $naming_components;
+    private $config;
+    private $eventoid;
 
     /**
-     * Initialize the instance of local_eventocoursecreation_course_naming
-     *
-     * @param string $eventolongname Normal long name of the module from evento
-     * @param string $eventomodulenumber Module number from evento like "mod.bpsEA.HS18_BSC.001"
-     * @param string $modulstarttime (option) Starttime of the module to determine if we are in spring or autumn term
+     * Initialize course naming with evento data
+     * 
+     * @param string $eventolongname Full event name from Evento
+     * @param string $eventomodulenumber Module number from Evento
+     * @param int|null $modulstarttime Optional start time for period calculation
+     * @param int|null $eventoid Evento ID for enrollment checking
+     * @param string|null $veranstalter Veranstalter identifier
      */
-    public function __construct($eventolongname, $eventomodulenumber, $modulstarttime = null) {
+    public function __construct($eventolongname, $eventomodulenumber, $modulstarttime = null, $eventoid = null, $veranstalter = null) {
+        $this->config = get_config('local_eventocoursecreation');
         $this->eventolongname = $eventolongname;
         $this->eventomodulenumber = $eventomodulenumber;
-        $this->config = get_config('local_eventocoursecreation');
-        $this->period = local_eventocoursecreation_course_creation::get_module_period($this->eventomodulenumber, $modulstarttime);
-        // Remove trailing info after a '_'.
-        $this->period = reset(preg_split('/(?=[_])/', $this->period, -1));
-
-        $modtokens = array();
-        $modtokens = explode('.', $this->eventomodulenumber);
-
-        $this->number = (int)end($modtokens);
-        if (!isset($this->number)) {
-            $this->number = '';
-        }
-        reset($modtokens);
-
-        // Get courseofstudies and moduleabr out of the module token.
-        $module = next($modtokens);
-        $chunks = preg_split('/(?=[A-Z])/', $module, -1);
-
-        $this->courseofstudies = array_shift($chunks);
-        if (!isset($this->courseofstudies)) {
-            $this->courseofstudies = '';
-        }
-
-        $this->moduleabr = str_replace($this->courseofstudies, '', $module);
-        if (!isset($this->moduleabr)) {
-            $this->moduleabr = $this->eventolongname;
-        }
+        $this->eventoid = $eventoid;
+        $this->parse_module_components($modulstarttime, $veranstalter);
     }
 
     /**
-     * Creates a long name for a moodle course
-     *
-     * @return string long name for a moodle course
+     * Parse all module components needed for naming
+     */
+    private function parse_module_components($modulstarttime, $veranstalter) {
+        // Split eventomodulenumber into tokens by '.'
+        $modtokens = explode('.', $this->eventomodulenumber);
+
+        // Get module identifier (second token)
+        $moduleIdentifier = $modtokens[1] ?? '';
+
+        // Initialize courseofstudies and moduleabr
+        $courseofstudies = '';
+        $moduleabr = '';
+
+        if ($moduleIdentifier !== '') {
+            // Split moduleIdentifier at uppercase letters
+            $parts = preg_split('/(?=[A-Z])/', $moduleIdentifier, -1, PREG_SPLIT_NO_EMPTY);
+            $courseofstudies = array_shift($parts) ?? '';
+            $moduleabr = implode('', $parts) ?: $this->eventolongname;
+        }
+
+        $this->naming_components = array(
+            'period' => $this->extract_period($modulstarttime),
+            'moduleabr' => $moduleabr,
+            'courseofstudies' => $veranstalter ?: $courseofstudies,
+            'num' => '',
+            'name' => $this->eventolongname
+        );
+    }
+
+
+    /**
+     * Extract period based on module start time
+     */
+    private function extract_period($modulstarttime) {
+        if ($modulstarttime) {
+            $month = date('n', $modulstarttime);
+            $year = date('y', $modulstarttime);
+            return (in_array($month, [2,3,4,5,6,7]) ? 'FS' : 'HS') . $year;
+        }
+        return '';
+    }
+
+    /**
+     * Create the long (full) name for the course
      */
     public function create_long_course_name() {
         return trim($this->create_name($this->config->longcoursenaming));
     }
 
     /**
-     * Creates a short name for a moodle course
-     *
-     * @return string short name for a moodle course
+     * Create the short name for the course
+     * 
+     * @param int $existingCourseId ID of course being updated, if any
+     * @return string Short course name
      */
-    public function create_short_course_name() {
-        global $DB;
-        $namenumber = $this->create_name($this->config->shortcoursenaming);
-        $name = trim($this->create_name(str_replace(EVENTOCOURSECREATION_NAME_PH_NUM, '', $this->config->shortcoursenaming)));
-        // Only the the number in shortname if there are 2 Modules with the same name.
-        // Check if the shortname already exists.
-        $params = array('pname' => $name . '%');
-        if ($DB->record_exists_select('course', 'shortname like :pname', $params)) {
-            if ($DB->record_exists('course', array('shortname' => $name))) {
-                // Update existing course and extend the short name with the numbertoken.
-                $course = $DB->get_record('course', array('shortname' => $name), '*', MUST_EXIST);
-                // Get the trailing number token.
-                $modtokens = explode('.', $course->idnumber);
-                $numbertoken = (int)end($modtokens);
-                if (isset($numbertoken) && is_numeric($numbertoken)) {
-                    $course->shortname = $course->shortname . ' ' .$numbertoken;
-                    if ($DB->record_exists('course', array('shortname' => $name))) {
-                        update_course($course);
-                    }
-                }
-            }
-            $name = $namenumber;
-        }
-
-        return trim($name);
+    public function create_short_course_name($existingCourseId = null) {
+        $baseName = trim($this->create_name($this->config->shortcoursenaming));
+        return $this->ensure_unique_shortname($baseName, $existingCourseId);
     }
 
     /**
-     * Creates a name for a cours out of a specific naming
-     *
-     * @param string $naming String with naming tokens to be replaced by module values
-     * @return string name for a naming
+     * Ensure a course shortname is unique
+     * 
+     * @param string $shortname Base shortname to check
+     * @param int $existingCourseId ID of course being updated, if any
+     * @return string Unique shortname
      */
-    protected function create_name($naming) {
-        $name = $naming;
-        $name = str_replace(EVENTOCOURSECREATION_NAME_PH_EVENTO_NAME, $this->eventolongname, $name);
-        $name = str_replace(EVENTOCOURSECREATION_NAME_PH_EVENTO_ABR, $this->moduleabr, $name);
-        $name = str_replace(EVENTOCOURSECREATION_NAME_PH_PERIOD, $this->period, $name);
-        $name = str_replace(EVENTOCOURSECREATION_NAME_PH_COS, $this->courseofstudies, $name);
-        $name = str_replace(EVENTOCOURSECREATION_NAME_PH_NUM, $this->number, $name);
+    private function ensure_unique_shortname($shortname, $existingCourseId = null) {
+        global $DB;
+    
+        $suffix = '';
+        $attempt = 1;
+        $currentName = $shortname;
+    
+        do {
+            $params = array('shortname' => $currentName);
+            if ($existingCourseId) {
+                $params['id'] = array('!=', $existingCourseId);
+            }
+    
+            // Check if course exists
+            $existingCourse = $DB->get_record('course', $params);
+            if (!$existingCourse) {
+                break;
+            }
+    
+            // Check if existing course uses same Evento event enrollment
+            if ($this->eventoid && $this->has_same_enrollment($existingCourse->id)) {
+                // Since a course with the same shortname and enrollment exists, we should not create a new one
+                $currentName = ''; // Force the loop to exit
+                break;
+            }
+    
+            // Add incrementing suffix
+            $attempt++;
+            $suffix = '_' . $attempt;
+            $currentName = $shortname . $suffix;
+    
+        } while (true);
+    
+        return $currentName;
+    }    
 
-        return trim($name);
+    /**
+     * Check if a course uses the same evento enrollment
+     * 
+     * @param int $courseid Course ID to check
+     * @return bool True if course has same evento enrollment
+     */
+    private function has_same_enrollment($courseid) {
+        global $DB;
+        
+        $enrolInstances = $DB->get_records('enrol', array(
+            'courseid' => $courseid,
+            'enrol' => 'evento'
+        ));
+        
+        foreach ($enrolInstances as $enrol) {
+            if ($enrol->customint1 == $this->eventoid) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
+    /**
+     * Create a course name using template and available components
+     */
+    private function create_name($template) {
+        $replacements = array(
+            EVENTOCOURSECREATION_NAME_PH_EVENTO_NAME => $this->naming_components['name'],
+            EVENTOCOURSECREATION_NAME_PH_EVENTO_ABR => $this->naming_components['moduleabr'],
+            EVENTOCOURSECREATION_NAME_PH_PERIOD => $this->naming_components['period'],
+            EVENTOCOURSECREATION_NAME_PH_COS => $this->naming_components['courseofstudies'],
+            EVENTOCOURSECREATION_NAME_PH_NUM => $this->naming_components['num']
+        );
+        
+        return str_replace(
+            array_keys($replacements),
+            array_values($replacements),
+            $template
+        );
+    }
 }

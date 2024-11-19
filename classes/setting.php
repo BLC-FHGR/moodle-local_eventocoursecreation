@@ -371,4 +371,85 @@ class local_eventocoursecreation_setting {
         }
     }
 
+    /**
+     * Run course creation for this category
+     *
+     * @param bool $force Whether to force creation regardless of timing
+     * @return string HTML output of the run process
+     */
+    public function run_course_creation($force = false) {
+        global $OUTPUT;
+        
+        $output = '';
+        $output .= $OUTPUT->header();
+        $output .= $OUTPUT->heading(get_string('runningcoursecreation', 'local_eventocoursecreation'));
+        
+        $output .= html_writer::start_div('progress-container');
+        $output .= html_writer::start_div('progress-output');
+        
+        // Create tracer and run
+        $trace = new html_list_progress_trace();
+        $creator = new local_eventocoursecreation_course_creation();
+        
+        // Run sync for just this category
+        $status = $creator->course_sync($trace, $this->category, $force);
+        
+        $output .= html_writer::end_div(); // progress-output
+        
+        // Add status message
+        $statusclass = '';
+        $statusmsg = '';
+        switch ($status) {
+            case 0:
+                $statusclass = 'success';
+                $statusmsg = get_string('creationsuccessful', 'local_eventocoursecreation');
+                break;
+            case 1:
+                $statusclass = 'error';
+                $statusmsg = get_string('creationfailed', 'local_eventocoursecreation');
+                break;
+            case 2:
+                $statusclass = 'warning';
+                $statusmsg = get_string('creationskipped', 'local_eventocoursecreation');
+                break;
+            default:
+                $statusclass = 'error';
+                $statusmsg = get_string('creationunknown', 'local_eventocoursecreation');
+        }
+        
+        $output .= html_writer::div($statusmsg, 'alert alert-' . $statusclass);
+        
+        // Return button
+        $returnbtn = new single_button(
+            new moodle_url('/course/management.php'),
+            get_string('returntocategory', 'local_eventocoursecreation'),
+            'get'
+        );
+        $output .= html_writer::div($OUTPUT->render($returnbtn), 'continuebutton');
+        
+        $output .= html_writer::end_div(); // progress-container
+        $output .= $OUTPUT->footer();
+        
+        return $output;
+    }
+
+    /**
+     * Get settings by idnumber
+     * @param string $idnumber The category idnumber
+     * @return local_eventocoursecreation_setting|null
+     */
+    public static function get_by_idnumber($idnumber) {
+        global $DB;
+        
+        try {
+            $record = $DB->get_record('local_eventocoursecreation_sets', 
+                ['idnumber' => $idnumber], 
+                '*', 
+                MUST_EXIST);
+            return new local_eventocoursecreation_setting($record);
+        } catch (dml_exception $e) {
+            debugging('Failed to get setting for idnumber ' . $idnumber . ': ' . $e->getMessage());
+            return null;
+        }
+    }
 }

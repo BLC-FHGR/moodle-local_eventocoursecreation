@@ -22,40 +22,51 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+
 namespace local_eventocoursecreation\task;
 
-defined('MOODLE_INTERNAL') || die;
+defined('MOODLE_INTERNAL') || die();
 
 /**
- * Simple task to run sync crourse creation.
- *
- * @copyright  2017 HTW Chur Roger Barras
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * Scheduled task for Evento course creation sync
  */
 class evento_course_creation_sync_task extends \core\task\scheduled_task {
-
     /**
-     * Get a descriptive name for this task (shown to admins).
+     * Get the name of the task
      *
      * @return string
      */
     public function get_name() {
-        return get_string('eventosynccoursecreation', 'local_eventocoursecreation');
+        return get_string('eventocoursesynctask', 'local_eventocoursecreation');
     }
 
     /**
-     * Do the job.
-     * Throw exceptions on errors (the job will be retried).
+     * Execute the task
      */
     public function execute() {
         global $CFG;
-
-        // Instance of enrol_evento_plugin.
-        $plugin = new \local_eventocoursecreation_course_creation();
-        $result = $plugin->course_sync(new \text_progress_trace());
-
-        return $result;
-
+        require_once($CFG->dirroot . '/local/eventocoursecreation/classes/course_creation.php');
+        
+        mtrace("Starting evento course creation sync task...");
+        
+        try {
+            print_r("helllll");
+            $trace = new \text_progress_trace();
+            $creation = new \local_eventocoursecreation_course_creation();
+            $creation->set_trace($trace);
+            print_r("please");
+            $result = $creation->course_sync($trace);
+            print_r("cheese");
+            
+            if ($result === 0) {
+                mtrace("Sync completed successfully");
+            } else {
+                mtrace("Sync completed with status: " . $result);
+            }
+            
+        } catch (\Exception $e) {
+            mtrace("Error during sync: " . $e->getMessage());
+            throw $e;
+        }
     }
-
 }

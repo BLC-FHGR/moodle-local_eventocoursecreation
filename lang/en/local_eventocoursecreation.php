@@ -24,6 +24,8 @@
 
 defined('MOODLE_INTERNAL') || die;
 
+$string['pluginname'] = 'Evento Course Creation';
+$string['eventocoursesynctask'] = 'Evento course creation synchronisation';
 $string['autumnendmonth'] = 'End month';
 $string['autumnendmonth_help'] = 'Month, to which the course creation will be executed for the autumn term.';
 $string['autumnendday'] = 'End day';
@@ -60,7 +62,6 @@ $string['no'] = 'No';
 $string['numberofsections'] = 'Number of sections';
 $string['numberofsections_help'] = 'Number of section in empty new courses';
 $string['plugindisabled'] = 'The plugin for Evento Course Creation is disabled!';
-$string['pluginname'] = 'Evento Course Creation';
 $string['pluginname_desc'] = 'Creates courses based on the evento modules.';
 $string['privacy:metadata'] = 'The plugin Evento Course Creation does not store any personal data.';
 $string['shortcoursenaming'] = 'Short name for moodle courses';
@@ -98,3 +99,28 @@ $string['setcustomcoursestart_help'] = 'If set, the course will be created with 
 $string['coursestart'] = 'Start time';
 $string['coursestart_help'] = 'Start time that will be set at course cration.';
 $string['starttimecourseinvalid'] = 'Course start time is not a valid unix time stamp.';
+$string['runnowheader'] = 'Run Course Creation';
+$string['runnow'] = 'Create Courses Now';
+$string['runnowdesc'] = 'Immediately create all courses from Evento for this category';
+$string['runnowdesc_help'] = 'This will start the course creation process for this category immediately. Use the force option to bypass timing restrictions.';
+$string['forcecreation'] = 'Force creation (ignore timing restrictions)';
+$string['runningcoursecreation'] = 'Creating Evento Courses';
+$string['creationsuccessful'] = 'Course creation completed successfully';
+$string['creationfailed'] = 'Course creation failed';
+$string['creationskipped'] = 'Course creation skipped - prerequisites not met';
+$string['creationunknown'] = 'Unknown error during course creation';
+$string['returntocategory'] = 'Return to category';
+// preview
+$string['coursecreated'] = 'Course was created successfully';
+$string['coursealreadyexists'] = 'Course already exists';
+$string['creationnotenabled'] = 'Course creation is not enabled for this category';
+$string['creationnotallowed'] = 'Course creation is not allowed at this time';
+$string['outsidecreationperiod'] = 'Outside the allowed creation period';
+$string['notmainevent'] = 'Not a main event';
+$string['prerequisitesfailed'] = 'System prerequisites not met';
+$string['coursecreationfailed'] = 'Course creation failed';
+$string['eventnotfound'] = 'Event not found';
+$string['categorynotfound'] = 'Category not found';
+$string['settingsnotfound'] = 'Category settings not found';
+$string['createselected'] = 'Create Selected';
+$string['forcecreation'] = 'Force Creation';

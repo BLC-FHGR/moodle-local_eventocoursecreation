@@ -36,7 +36,7 @@ class local_eventocoursecreation_setting_form extends moodleform {
 
     // Define the form.
     public function definition() {
-        global $OUTPUT, $DB;
+        global $OUTPUT, $DB, $PAGE;
         $mform = $this->_form;
 
         list($data) = $this->_customdata;
@@ -174,6 +174,34 @@ class local_eventocoursecreation_setting_form extends moodleform {
         $mform->setType('contextid', PARAM_INT);
         $mform->setDefault('contextid', $contextid);
 
+        // Add preview section
+        $mform->addElement('header', 'previewheader', get_string('preview_title', 'local_eventocoursecreation'));
+        
+        // Create container for preview
+        $unique_id = html_writer::random_id('evento_preview_');
+        $preview_container = html_writer::div('', 'evento-preview-container', array('id' => $unique_id));
+        $mform->addElement('html', $preview_container);
+        
+        // Add JavaScript initialization
+        $PAGE->requires->js_call_amd('local_eventocoursecreation/preview', 'init', array(
+            $unique_id,
+            $categoryid
+        ));
+        
+        // Add run now section
+        $mform->addElement('header', 'runnowheader', get_string('runnowheader', 'local_eventocoursecreation'));
+        $mform->setExpanded('runnowheader', true);
+        
+        $runnowgroup = array();
+        $runnowgroup[] = $mform->createElement('submit', 'runnow', 
+            get_string('runnow', 'local_eventocoursecreation'));
+        $runnowgroup[] = $mform->createElement('checkbox', 'force', 
+            get_string('forcecreation', 'local_eventocoursecreation'));
+        $mform->addGroup($runnowgroup, 'runnowgrp', 
+            get_string('runnowdesc', 'local_eventocoursecreation'), array(' '), false);
+        $mform->addHelpButton('runnowgrp', 'runnowdesc', 'local_eventocoursecreation');
+
+        // save buttons
         $this->add_action_buttons( true, get_string('savechanges'));
 
     }
@@ -214,5 +242,102 @@ class local_eventocoursecreation_setting_form extends moodleform {
         }
 
         return $errors;
+    }
+
+    /**
+     * Process the form data
+     * @param array $data submitted form data
+     * @return boolean true if normal save, false if alternative processing needed
+     */
+    public function process($data) {
+        if (!empty($data->runnow)) {
+            // Return false to indicate alternate processing needed
+            return false;
+        }
+        // Normal save
+        return true;
+    }
+    
+    /**
+     * Get appropriate status message based on runner status code
+     *
+     * @param int $status The status code from the runner
+     * @return string The status message to display
+     */
+    private function get_status_message($status) {
+        switch ($status) {
+            case 0:
+                $class = 'success';
+                $message = get_string('creationsuccessful', 'local_eventocoursecreation');
+                break;
+            case 1:
+                $class = 'error';
+                $message = get_string('creationfailed', 'local_eventocoursecreation');
+                break;
+            case 2:
+                $class = 'warning';
+                $message = get_string('creationskipped', 'local_eventocoursecreation');
+                break;
+            default:
+                $class = 'error';
+                $message = get_string('creationunknown', 'local_eventocoursecreation');
+        }
+        
+        return html_writer::div($message, 'alert alert-' . $class);
+    }
+
+    /**
+     * Process the form before display
+     */
+    public function definition_after_data() {
+        global $OUTPUT;
+        $mform = $this->_form;
+        
+        // Check if this was a 'run now' submission
+        if (optional_param('runnow', '', PARAM_TEXT)) {
+            $force = optional_param('force', 0, PARAM_INT);
+            
+            // Output starts here - clear any previous output
+            ob_clean();
+            
+            echo $OUTPUT->header();
+            echo $OUTPUT->heading(get_string('runningcoursecreation', 'local_eventocoursecreation'));
+            
+            echo html_writer::start_div('progress-container');
+            echo html_writer::start_div('progress-output');
+            
+            // Create tracer and run
+            $trace = new html_list_progress_trace();
+            $creator = new local_eventocoursecreation_course_creation();
+            
+            // Run sync for this category
+            $categoryid = required_param('category', PARAM_INT);
+            $status = $creator->course_sync($trace, $categoryid, $force);
+            
+            echo html_writer::end_div(); // progress-output
+            
+            // Add status message
+            switch ($status) {
+                case 0:
+                    \core\notification::success(get_string('creationsuccessful', 'local_eventocoursecreation'));
+                    break;
+                case 1:
+                    \core\notification::error(get_string('creationfailed', 'local_eventocoursecreation'));
+                    break;
+                case 2:
+                    \core\notification::warning(get_string('creationskipped', 'local_eventocoursecreation'));
+                    break;
+                default:
+                    \core\notification::error(get_string('creationunknown', 'local_eventocoursecreation'));
+            }
+            
+            echo html_writer::end_div(); // progress-container
+            
+            // Display form again
+            parent::definition_after_data();
+            
+            echo $OUTPUT->footer();
+            die();
+        }
     }
 }

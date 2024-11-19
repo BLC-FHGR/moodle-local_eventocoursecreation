@@ -21,11 +21,12 @@
  * @copyright  2017 HTW Chur Roger Barras
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+
 defined('MOODLE_INTERNAL') || die();
 
 $tasks = array(
     array(
-        'classname' => '\local_eventocoursecreation\task\evento_course_creation_sync_task',
+        'classname' => 'local_eventocoursecreation\task\evento_course_creation_sync_task',
         'blocking' => 0,
         'minute' => '15',
         'hour' => '22',
