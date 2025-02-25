@@ -15,22 +15,27 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Evento course creation plugin
+ * Run course creation for a category
  *
  * @package    local_eventocoursecreation
- * @copyright  2017 HTW Chur Roger Barras
+ * @copyright  2024 FHGR
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die;
+require_once('../../config.php');
+require_once($CFG->libdir . '/adminlib.php');
+require_once($CFG->dirroot . '/local/eventocoursecreation/locallib.php');
 
-require_once(__DIR__ . '/locallib.php');
+$categoryid = required_param('category', PARAM_INT);
+$force = optional_param('force', 0, PARAM_INT);
+require_sesskey();
 
-$plugin->version   = 2023121809; // The current module version (Date: YYYYMMDDXX)
-$plugin->requires  = 2016120500; // Requires this Moodle version.
-$plugin->component = 'local_eventocoursecreation';
-$plugin->maturity  = MATURITY_STABLE;
-$plugin->release   = "2.1.2"; // User-friendly version number.
-$plugin->dependencies = array(
-    'local_evento' => 2018072600
-);
+$context = context_coursecat::instance($categoryid);
+require_login();
+require_capability('moodle/category:manage', $context);
+
+// Get settings
+$setting = local_eventocoursecreation_setting::get($categoryid);
+
+// Run the course creation
+echo $setting->run_course_creation($force);

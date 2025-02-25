@@ -1,0 +1,80 @@
+.progress-container {
+    margin: 20px 0;
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #f9f9f9;
+}
+
+.progress-output {
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 20px;
+    padding: 10px;
+    background: #fff;
+    border: 1px solid #eee;
+    font-family: monospace;
+}
+
+.status-message {
+    margin: 20px 0;
+}
+
+.alert {
+    padding: 15px;
+    margin-bottom: 20px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+}
+
+.alert-success {
+    color: #3c763d;
+    background-color: #dff0d8;
+    border-color: #d6e9c6;
+}
+
+.alert-warning {
+    color: #8a6d3b;
+    background-color: #fcf8e3;
+    border-color: #faebcc;
+}
+
+.alert-error {
+    color: #a94442;
+    background-color: #f2dede;
+    border-color: #ebccd1;
+}
+
+/* local/eventocoursecreation/styles.css */
+
+.evento-course-preview {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 15px;
+}
+
+.evento-course-preview .card {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: box-shadow 0.3s ease;
+}
+
+.evento-course-preview .card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.evento-course-preview .card-title {
+    color: #1177d1;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+}
+
+.evento-course-preview ul {
+    margin-left: 0;
+    padding-left: 0;
+}
+
+.evento-course-preview .list-unstyled li {
+    margin-bottom: 5px;
+    color: #666;
+}

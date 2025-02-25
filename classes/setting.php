@@ -54,6 +54,7 @@ class local_eventocoursecreation_setting {
         'newsitemsnumber' => array('cn', 0),
         'numberofsections' => array('cs', 0),
         'timemodified' => null, // Not cached.
+        'subcatorganization' => array('so', EVENTOCOURSECREATION_SUBCAT_SEMESTER),
     );
 
     /** @var int */
@@ -106,6 +107,9 @@ class local_eventocoursecreation_setting {
 
     /** @var int */
     protected $timemodified = false;
+
+    /** @var int */
+    protected $subcatorganization = EVENTOCOURSECREATION_SUBCAT_SEMESTER;
 
     /**
      * Magic setter method, we do not want anybody to modify properties from the outside
@@ -320,6 +324,9 @@ class local_eventocoursecreation_setting {
             }
             $newsetting->starttimecourse = $data->starttimecourse;
         }
+        if (isset($data->subcatorganization)) {
+            $newsetting->subcatorganization = $data->subcatorganization;
+        }
         $newsetting->enablecoursetemplate = $data->enablecoursetemplate;
         $newsetting->execonlyonstarttimespringterm = $data->execonlyonstarttimespringterm;
         $newsetting->execonlyonstarttimeautumnterm = $data->execonlyonstarttimeautumnterm;
@@ -328,6 +335,8 @@ class local_eventocoursecreation_setting {
         $newsetting->numberofsections = $data->numberofsections;
         $newsetting->enablecatcoursecreation = $data->enablecatcoursecreation;
         $newsetting->setcustomcoursestarttime = $data->setcustomcoursestarttime;
+        $newsetting->subcatorganization = $data->subcatorganization;
+
 
         $newsetting->timemodified = time();
 

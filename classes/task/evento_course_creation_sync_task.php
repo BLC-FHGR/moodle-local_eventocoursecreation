@@ -1,71 +1,60 @@
 <?php
-// This file is part of Moodle - http://moodle.org/
-//
-// Moodle is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Moodle is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
-
-/**
- * Evento course creation plugin
- *
- * @package    local_eventocoursecreation
- * @copyright  2017 HTW Chur Roger Barras
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- */
-
 
 namespace local_eventocoursecreation\task;
 
-defined('MOODLE_INTERNAL') || die();
+use core\task\scheduled_task;
+use Exception;
+use local_eventocoursecreation\ValidationException;
+use local_eventocoursecreation\EventoLogger;
+use local_eventocoursecreation\ServiceContainer;
+use local_eventocoursecreation\EventoConfiguration;
+use text_progress_trace;
 
 /**
- * Scheduled task for Evento course creation sync
+ * Main task handler for scheduled synchronization
  */
-class evento_course_creation_sync_task extends \core\task\scheduled_task {
+class evento_course_creation_sync_task extends scheduled_task
+{
     /**
-     * Get the name of the task
+     * Gets the name of the task
      *
      * @return string
      */
-    public function get_name() {
-        return get_string('eventocoursesynctask', 'local_eventocoursecreation');
+    public function get_name(): string
+    {
+        return get_string('taskname', 'local_eventocoursecreation');
     }
 
     /**
-     * Execute the task
+     * Executes the scheduled task
+     *
+     * @throws Exception
      */
-    public function execute() {
-        global $CFG;
-        require_once($CFG->dirroot . '/local/eventocoursecreation/classes/course_creation.php');
-        
-        mtrace("Starting evento course creation sync task...");
-        
+    public function execute()
+    {
+        $trace = new text_progress_trace();
+        $logger = new EventoLogger($trace);
+
         try {
-            print_r("helllll");
-            $trace = new \text_progress_trace();
-            $creation = new \local_eventocoursecreation_course_creation();
-            $creation->set_trace($trace);
-            print_r("please");
-            $result = $creation->course_sync($trace);
-            print_r("cheese");
-            
-            if ($result === 0) {
-                mtrace("Sync completed successfully");
-            } else {
-                mtrace("Sync completed with status: " . $result);
+            $container = new ServiceContainer($trace);
+            $syncService = $container->getCourseCreationService();
+
+            if (!EventoConfiguration::getInstance()->isPluginEnabled()) {
+                $logger->info("Plugin is disabled");
+                return;
             }
-            
-        } catch (\Exception $e) {
-            mtrace("Error during sync: " . $e->getMessage());
+
+            $result = $syncService->synchronizeAll();
+
+            if ($result === 0) {
+                $logger->info("Synchronization completed successfully");
+            } else {
+                $logger->error("Synchronization failed", ['result' => $result]);
+            }
+        } catch (ValidationException $e) {
+            $logger->error("Validation failed", ['error' => $e->getMessage()]);
+        } catch (Exception $e) {
+            $logger->error("Task execution failed", ['error' => $e->getMessage()]);
             throw $e;
         }
     }

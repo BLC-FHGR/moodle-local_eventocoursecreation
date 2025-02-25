@@ -100,3 +100,10 @@ define('EVENTOCOURSECREATION_NAME_LONGNAME', '@EVENTONAME@ (@STG@) @PERIODE@');
  * Default setting value for the short name of a course
  */
 define('EVENTOCOURSECREATION_NAME_SHORTNAME', '@EVENTOABK@ (@STG@) @PERIODE@ @NUM@');
+
+/**
+ * Constants for subcategory organization types 
+ */
+define('EVENTOCOURSECREATION_SUBCAT_NONE', 0);
+define('EVENTOCOURSECREATION_SUBCAT_SEMESTER', 1); 
+define('EVENTOCOURSECREATION_SUBCAT_YEAR', 2);

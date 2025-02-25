@@ -1,0 +1,70 @@
+<div class="container-fluid p-0">
+    <div class="row" data-region="course-grid">
+        {{#courses}}
+        <div class="col-12 col-md-6 col-lg-4 mb-3">
+            <div class="card h-100 course-preview-card" data-event-id="{{eventId}}">
+                <div class="card-body">
+                    <div class="mb-3 d-flex justify-content-between align-items-center">
+                        <div class="form-check">
+                            <input type="checkbox" 
+                                   class="form-check-input course-select" 
+                                   id="select-{{eventId}}"
+                                   value="{{eventId}}"
+                                   {{#canCreate}}checked{{/canCreate}}
+                                   {{^canCreate}}disabled{{/canCreate}}>
+                            <label class="form-check-label" for="select-{{eventId}}">
+                                {{#str}}select, local_eventocoursecreation{{/str}}
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" 
+                                   class="form-check-input force-create" 
+                                   id="force-{{eventId}}">
+                            <label class="form-check-label" for="force-{{eventId}}">
+                                {{#str}}forcecreation, local_eventocoursecreation{{/str}}
+                            </label>
+                        </div>
+                    </div>
+
+                    <h5 class="card-title">{{name}}</h5>
+                    <p class="card-text text-muted">{{categoryname}}</p>
+                    <p class="card-text">
+                        <small class="text-muted">{{formattedStartDate}} - {{formattedEndDate}}</small>
+                    </p>
+
+                    {{#subcourses.length}}
+                    <div class="alert alert-info mt-3">
+                        <h6 class="alert-heading">{{#str}}subcourses, local_eventocoursecreation{{/str}}</h6>
+                        <ul class="list-unstyled mb-0">
+                            {{#subcourses}}
+                            <li>{{name}}</li>
+                            {{/subcourses}}
+                        </ul>
+                    </div>
+                    {{/subcourses.length}}
+
+                    <button class="btn btn-primary w-100 mt-3 create-single"
+                            {{^canCreate}}disabled{{/canCreate}}>
+                        {{#str}}create, local_eventocoursecreation{{/str}}
+                    </button>
+                </div>
+            </div>
+        </div>
+        {{/courses}}
+    </div>
+
+    {{#showCreateSelected}}
+    <div class="mt-3">
+        <button class="btn btn-success create-selected" 
+                {{^hasSelectedCourses}}disabled{{/hasSelectedCourses}}>
+            {{#str}}createselected, local_eventocoursecreation{{/str}}
+        </button>
+    </div>
+    {{/showCreateSelected}}
+</div>
+
+{{^courses.length}}
+<div class="alert alert-info">
+    <i class="fa fa-info-circle"></i> {{#str}}nocoursestocreate, local_eventocoursecreation{{/str}}
+</div>
+{{/courses.length}}

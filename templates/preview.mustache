@@ -1,0 +1,27 @@
+{{!
+    templates/preview.mustache
+}}
+<div class="evento-course-preview">
+    {{^hasData}}
+        <div class="alert alert-info">
+            {{#str}}no_courses_to_create, local_eventocoursecreation{{/str}}
+        </div>
+    {{/hasData}}
+    
+    {{#hasData}}
+        <div class="alert alert-info">
+            {{#str}}found_courses, local_eventocoursecreation, {{courses.length}}{{/str}}
+        </div>
+        
+        {{#courses}}
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">{{name}}</h5>
+                    <div class="card-text">
+                        {{> local_eventocoursecreation/course_details }}
+                    </div>
+                </div>
+            </div>
+        {{/courses}}
+    {{/hasData}}
+</div>

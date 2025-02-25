@@ -48,6 +48,19 @@ if ($hassiteconfig) {
                     get_string('shortcoursenaming_help', 'local_eventocoursecreation'),
                     EVENTOCOURSECREATION_NAME_SHORTNAME, PARAM_TEXT));
 
+    // Add setting for default subcategory organization
+    $subcatorganization = array(
+        EVENTOCOURSECREATION_SUBCAT_NONE => get_string('subcatorg_none', 'local_eventocoursecreation'),
+        EVENTOCOURSECREATION_SUBCAT_SEMESTER => get_string('subcatorg_semester', 'local_eventocoursecreation'),
+        EVENTOCOURSECREATION_SUBCAT_YEAR => get_string('subcatorg_year', 'local_eventocoursecreation')
+    );
+
+    $settings->add(new admin_setting_configselect('local_eventocoursecreation/defaultsubcatorganization',
+        get_string('defaultsubcatorganization', 'local_eventocoursecreation'),
+        get_string('defaultsubcatorganization_help', 'local_eventocoursecreation'),
+        EVENTOCOURSECREATION_SUBCAT_SEMESTER,
+        $subcatorganization));
+
     // Default values for course setting.
     $settings->add(new admin_setting_heading('defaultcourssettings',
                     get_string('defaultcourssettings', 'local_eventocoursecreation'),
@@ -137,4 +150,18 @@ if ($hassiteconfig) {
     $settings->add(new admin_setting_configcheckbox('local_eventocoursecreation/execonlyonstarttimeautumnterm',
                     new lang_string('execonlyonstarttimeautumnterm', 'local_eventocoursecreation'),
                     new lang_string('execonlyonstarttimeautumnterm_help', 'local_eventocoursecreation'), 1));
+    // Options for subcategorization
+    $options = [
+        EVENTOCOURSECREATION_SUBCAT_NONE => get_string('subcatorg_none', 'local_eventocoursecreation'),
+        EVENTOCOURSECREATION_SUBCAT_SEMESTER => get_string('subcatorg_semester', 'local_eventocoursecreation'),
+        EVENTOCOURSECREATION_SUBCAT_YEAR => get_string('subcatorg_year', 'local_eventocoursecreation')
+    ];
+    // Setting for subcategorization
+    $settings->add(new admin_setting_configselect(
+        'local_eventocoursecreation/defaultsubcategorization',
+        get_string('defaultsubcategorization', 'local_eventocoursecreation'),
+        get_string('defaultsubcategorization_help', 'local_eventocoursecreation'),
+        EVENTOCOURSECREATION_SUBCAT_SEMESTER,
+        $options
+    ));
 }

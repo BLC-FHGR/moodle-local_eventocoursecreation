@@ -32,6 +32,19 @@ function xmldb_local_eventocoursecreation_upgrade($oldversion) {
     global $DB;
     $dbman = $DB->get_manager();
 
+    if ($oldversion < 2023121808) {
+        // Define field subcatorganization to be added to eventocoursecreation
+        $table = new xmldb_table('eventocoursecreation');
+        $field = new xmldb_field('subcatorganization', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '1', 'numberofsections');
+
+        // Add field if it doesn't exist
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_plugin_savepoint(true, 2023121808, 'local', 'eventocoursecreation');
+    }
+
     if ($oldversion < 2023121800) {
 
         // Define field completionminattempts to be added to eventocoursecreation.

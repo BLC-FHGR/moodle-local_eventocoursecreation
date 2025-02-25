@@ -103,7 +103,19 @@ class local_eventocoursecreation_setting_form extends moodleform {
         $mform->addElement('select', 'enablecoursetemplate', get_string('enablecoursetemplate', 'local_eventocoursecreation'), $choices);
         $mform->addHelpButton('enablecoursetemplate', 'enablecoursetemplate', 'local_eventocoursecreation');
         $mform->setDefault('enablecoursetemplate', 0);
-        // $mform->disabledIf('templatecourse', 'enablecoursetemplate', 'eq', 0);
+        
+        // Add subcategory organization setting
+        $subcatorganization = array(
+            EVENTOCOURSECREATION_SUBCAT_NONE => get_string('subcatorg_none', 'local_eventocoursecreation'),
+            EVENTOCOURSECREATION_SUBCAT_SEMESTER => get_string('subcatorg_semester', 'local_eventocoursecreation'),
+            EVENTOCOURSECREATION_SUBCAT_YEAR => get_string('subcatorg_year', 'local_eventocoursecreation')
+        );
+
+        $mform->addElement('select', 'subcatorganization', 
+            get_string('subcatorganization', 'local_eventocoursecreation'), 
+            $subcatorganization);
+        $mform->addHelpButton('subcatorganization', 'subcatorganization', 'local_eventocoursecreation');
+        $mform->setDefault('subcatorganization', $config->defaultsubcatorganization);
 
         // Days.
         $days = array_combine(range(1, 31), range(1, 31));
@@ -174,35 +186,40 @@ class local_eventocoursecreation_setting_form extends moodleform {
         $mform->setType('contextid', PARAM_INT);
         $mform->setDefault('contextid', $contextid);
 
-        // Add preview section
-        $mform->addElement('header', 'previewheader', get_string('preview_title', 'local_eventocoursecreation'));
-        
-        // Create container for preview
-        $unique_id = html_writer::random_id('evento_preview_');
-        $preview_container = html_writer::div('', 'evento-preview-container', array('id' => $unique_id));
-        $mform->addElement('html', $preview_container);
-        
-        // Add JavaScript initialization
-        $PAGE->requires->js_call_amd('local_eventocoursecreation/preview', 'init', array(
-            $unique_id,
-            $categoryid
-        ));
-        
-        // Add run now section
-        $mform->addElement('header', 'runnowheader', get_string('runnowheader', 'local_eventocoursecreation'));
-        $mform->setExpanded('runnowheader', true);
-        
-        $runnowgroup = array();
-        $runnowgroup[] = $mform->createElement('submit', 'runnow', 
-            get_string('runnow', 'local_eventocoursecreation'));
-        $runnowgroup[] = $mform->createElement('checkbox', 'force', 
-            get_string('forcecreation', 'local_eventocoursecreation'));
-        $mform->addGroup($runnowgroup, 'runnowgrp', 
-            get_string('runnowdesc', 'local_eventocoursecreation'), array(' '), false);
-        $mform->addHelpButton('runnowgrp', 'runnowdesc', 'local_eventocoursecreation');
+        // Bulk creation section
+        $mform->addElement('header', 'runnowheader', get_string('bulkcreation', 'local_eventocoursecreation'));
 
-        // save buttons
-        $this->add_action_buttons( true, get_string('savechanges'));
+        $bulkgroup = array();
+        $bulkgroup[] = $mform->createElement('submit', 'runnow', get_string('createall', 'local_eventocoursecreation'));
+        $bulkgroup[] = $mform->createElement('checkbox', 'force', get_string('forcecreation', 'local_eventocoursecreation'));
+        $mform->addGroup($bulkgroup, 'bulkgrp', get_string('bulkcreationdesc', 'local_eventocoursecreation'), array(' '), false);
+        $mform->addHelpButton('bulkgrp', 'bulkcreationdesc', 'local_eventocoursecreation');
+
+        // Individual creation section (starts collapsed)
+        $mform->addElement('header', 'individualcreationheader', get_string('individualcreation', 'local_eventocoursecreation'));
+        $mform->setExpanded('individualcreationheader', false);
+
+        // Add a container for the preview content with initial loading state
+        $loading_html = html_writer::div(
+            html_writer::div(
+                get_string('loadingcourselist', 'local_eventocoursecreation'),
+                'alert alert-info'
+            ),
+            '',
+            array('id' => 'evento-preview-content')
+        );
+        $mform->addElement('html', $loading_html);
+
+        $this->add_action_buttons();
+
+        // Initialize JavaScript
+        $PAGE->requires->strings_for_js([
+            'select', 'force', 'create', 'event', 'category', 'dates', 'creating',
+            'creationsuccessful', 'creationfailed', 'creationsuccessfulcount', 'creationfailedcount',
+            'nocoursestocreate'
+        ], 'local_eventocoursecreation');
+
+        $PAGE->requires->js_call_amd('local_eventocoursecreation/preview', 'init', array($categoryid));
 
     }
 
