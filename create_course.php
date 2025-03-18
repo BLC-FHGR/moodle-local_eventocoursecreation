@@ -1,6 +1,9 @@
 <?php
+// local/eventocoursecreation/create_course.php
+
 define('AJAX_SCRIPT', true);
 require_once(__DIR__ . '/../../config.php');
+require_once($CFG->dirroot . '/local/eventocoursecreation/locallib.php');
 require_once($CFG->dirroot . '/local/eventocoursecreation/lib.php');
 
 $CFG->debugdisplay = false;
@@ -13,12 +16,6 @@ $eventid = required_param('eventid', PARAM_INT);
 $categoryid = required_param('categoryid', PARAM_INT);
 $force = optional_param('force', 0, PARAM_INT);
 
-// New parameter for cached events
-$cachedEvents = optional_param('cachedEvents', null, PARAM_RAW);
-if ($cachedEvents) {
-    $cachedEvents = json_decode($cachedEvents);
-}
-
 $response = array(
     'status' => false,
     'message' => '',
@@ -26,28 +23,25 @@ $response = array(
 );
 
 try {
-    $context = context_coursecat::instance($categoryid);
+    $context = \context::instance_by_id(\context_coursecat::instance($categoryid)->id);
     require_capability('moodle/category:manage', $context);
 
     // Create trace to capture output
-    $trace = new progress_trace_buffer(new text_progress_trace(), false);
+    $trace = new \progress_trace_buffer(new \text_progress_trace(), false);
     
-    // Initialize course creator
-    $creator = new local_eventocoursecreation_course_creation();
-    $creator->set_trace($trace);
-    
-    // Create single course with cached events
-    $result = $creator->create_single_course($eventid, $categoryid, (bool)$force, $cachedEvents);
+    // Use our preview service
+    $previewService = \local_eventocoursecreation\PreviewServiceFactory::create($trace);
+    $result = $previewService->createSingleCourse($eventid, $categoryid, (bool)$force);
     
     // Get trace output
     $trace->finished();
     $traceOutput = $trace->get_buffer();
     
-    if ($result === true) {
+    if ($result) {
         $response['status'] = true;
         $response['message'] = get_string('coursecreated', 'local_eventocoursecreation');
     } else {
-        throw new moodle_exception('coursecreationfailed', 'local_eventocoursecreation');
+        throw new \moodle_exception('coursecreationfailed', 'local_eventocoursecreation');
     }
     
     $response['trace'] = $traceOutput;
@@ -57,9 +51,10 @@ try {
     $response['message'] = $e->getMessage();
     if (debugging()) {
         $response['debug'] = array(
-            'trace' => $trace ? $trace->get_buffer() : '',
+            'trace' => isset($trace) ? $trace->get_buffer() : '',
             'file' => $e->getFile(),
-            'line' => $e->getLine()
+            'line' => $e->getLine(),
+            'message' => $e->getMessage()
         );
     }
 }

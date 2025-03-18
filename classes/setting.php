@@ -55,6 +55,10 @@ class local_eventocoursecreation_setting {
         'numberofsections' => array('cs', 0),
         'timemodified' => null, // Not cached.
         'subcatorganization' => array('so', EVENTOCOURSECREATION_SUBCAT_SEMESTER),
+        'enable_api_optimization' => array('eao', 0),
+        'fetching_mode' => array('fm', 'smart'),
+        'custom_batch_size' => array('cbs', 0),
+        'override_global_fetching' => array('ogf', 0),
     );
 
     /** @var int */
@@ -110,6 +114,18 @@ class local_eventocoursecreation_setting {
 
     /** @var int */
     protected $subcatorganization = EVENTOCOURSECREATION_SUBCAT_SEMESTER;
+
+    /** @var int */
+    protected $enable_api_optimization = 0;
+
+    /** @var string */
+    protected $fetching_mode = 'smart';
+
+    /** @var int */
+    protected $custom_batch_size = 0;
+
+    /** @var int */
+    protected $override_global_fetching = 0;
 
     /**
      * Magic setter method, we do not want anybody to modify properties from the outside
@@ -189,6 +205,10 @@ class local_eventocoursecreation_setting {
         $this->coursevisibility = $config->coursevisibility;
         $this->newsitemsnumber = $config->newsitemsnumber;
         $this->numberofsections = $config->numberofsections;
+        $this->enable_api_optimization = isset($config->enable_api_optimization) ? $config->enable_api_optimization : 0;
+        $this->fetching_mode = isset($config->fetching_mode) ? $config->fetching_mode : 'smart';
+        $this->custom_batch_size = isset($config->batch_size) ? $config->batch_size : 200;
+        $this->override_global_fetching = 0; // Default to use global settings
 
         context_helper::preload_from_record($record);
         foreach ($record as $key => $val) {
@@ -327,6 +347,23 @@ class local_eventocoursecreation_setting {
         if (isset($data->subcatorganization)) {
             $newsetting->subcatorganization = $data->subcatorganization;
         }
+
+        if (isset($data->enable_api_optimization)) {
+            $newsetting->enable_api_optimization = $data->enable_api_optimization;
+        }
+        
+        if (isset($data->fetching_mode)) {
+            $newsetting->fetching_mode = $data->fetching_mode;
+        }
+        
+        if (isset($data->custom_batch_size)) {
+            $newsetting->custom_batch_size = (int)$data->custom_batch_size;
+        }
+        
+        if (isset($data->override_global_fetching)) {
+            $newsetting->override_global_fetching = $data->override_global_fetching;
+        }
+
         $newsetting->enablecoursetemplate = $data->enablecoursetemplate;
         $newsetting->execonlyonstarttimespringterm = $data->execonlyonstarttimespringterm;
         $newsetting->execonlyonstarttimeautumnterm = $data->execonlyonstarttimeautumnterm;
@@ -460,5 +497,37 @@ class local_eventocoursecreation_setting {
             debugging('Failed to get setting for idnumber ' . $idnumber . ': ' . $e->getMessage());
             return null;
         }
+    }
+
+    /**
+     * Get the effective fetching settings for this category
+     *
+     * @return array The fetching settings
+     */
+    public function get_fetching_settings() {
+        $config = get_config('local_eventocoursecreation');
+        
+        // Default to global settings
+        $settings = [
+            'fetching_mode' => $config->fetching_mode ?? 'smart',
+            'batch_size' => (int)($config->batch_size ?? 200),
+            'min_batch_size' => (int)($config->min_batch_size ?? 10),
+            'max_batch_size' => (int)($config->max_batch_size ?? 1000),
+            'adaptive_batch_sizing' => (bool)($config->adaptive_batch_sizing ?? true),
+            'date_chunk_fallback' => (bool)($config->date_chunk_fallback ?? true),
+            'date_chunk_days' => (int)($config->date_chunk_days ?? 90),
+            'max_api_retries' => (int)($config->max_api_retries ?? 3)
+        ];
+        
+        // Override with category-specific settings if enabled
+        if ($this->override_global_fetching) {
+            $settings['fetching_mode'] = $this->fetching_mode;
+            
+            if ($this->custom_batch_size > 0) {
+                $settings['batch_size'] = $this->custom_batch_size;
+            }
+        }
+        
+        return $settings;
     }
 }

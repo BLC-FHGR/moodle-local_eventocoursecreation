@@ -210,6 +210,50 @@ class local_eventocoursecreation_setting_form extends moodleform {
         );
         $mform->addElement('html', $loading_html);
 
+        // API optimization section
+        $mform->addElement('header', 'apifetchingheader', get_string('apifetchingheader', 'local_eventocoursecreation'));
+        $mform->setExpanded('apifetchingheader', false);  // Collapsed by default
+
+        // Override global fetching settings
+        $mform->addElement('advcheckbox', 'override_global_fetching', 
+            get_string('override_global_fetching', 'local_eventocoursecreation'),
+            get_string('override_global_fetching_help', 'local_eventocoursecreation'));
+        $mform->setDefault('override_global_fetching', 0);
+
+        // Fetching mode (only used if override is checked)
+        $fetchingmodes = array(
+            'classic' => get_string('fetching_mode_classic', 'local_eventocoursecreation'),
+            'smart' => get_string('fetching_mode_smart', 'local_eventocoursecreation'),
+            'fast' => get_string('fetching_mode_fast', 'local_eventocoursecreation')
+        );
+        $mform->addElement('select', 'fetching_mode', 
+            get_string('fetching_mode', 'local_eventocoursecreation'), 
+            $fetchingmodes);
+        $mform->setDefault('fetching_mode', 'smart');
+        $mform->disabledIf('fetching_mode', 'override_global_fetching', 'notchecked');
+
+        // Custom batch size (only used if override is checked)
+        $mform->addElement('text', 'custom_batch_size', 
+            get_string('custom_batch_size', 'local_eventocoursecreation'));
+        $mform->setType('custom_batch_size', PARAM_INT);
+        $mform->setDefault('custom_batch_size', 0);
+        $mform->addHelpButton('custom_batch_size', 'custom_batch_size', 'local_eventocoursecreation');
+        $mform->disabledIf('custom_batch_size', 'override_global_fetching', 'notchecked');
+
+        // Current global settings display
+        $config = get_config('local_eventocoursecreation');
+        $currentSettings = html_writer::start_tag('div', array('class' => 'alert alert-info'));
+        $currentSettings .= html_writer::tag('strong', get_string('current_global_settings', 'local_eventocoursecreation'));
+        $currentSettings .= html_writer::empty_tag('br');
+        $currentSettings .= get_string('fetching_mode', 'local_eventocoursecreation') . ': ' . 
+            get_string('fetching_mode_' . ($config->fetching_mode ?? 'smart'), 'local_eventocoursecreation');
+        $currentSettings .= html_writer::empty_tag('br');
+        $currentSettings .= get_string('batch_size', 'local_eventocoursecreation') . ': ' . 
+            ($config->batch_size ?? '200');
+        $currentSettings .= html_writer::end_tag('div');
+
+        $mform->addElement('html', $currentSettings);
+
         $this->add_action_buttons();
 
         // Initialize JavaScript
@@ -256,6 +300,13 @@ class local_eventocoursecreation_setting_form extends moodleform {
 
         if ((int)($data['starttimeautumntermmonth'] < 1) || (int)($data['starttimeautumntermmonth'] > 12)) {
             $errors['starttimeautumntermmonth'] = get_string('monthinvalid', 'local_eventocoursecreation');
+        }
+
+        // Validate custom batch size
+        if (!empty($data['override_global_fetching']) && !empty($data['custom_batch_size'])) {
+            if ($data['custom_batch_size'] < 1) {
+                $errors['custom_batch_size'] = get_string('batchsizeinvalid', 'local_eventocoursecreation');
+            }
         }
 
         return $errors;

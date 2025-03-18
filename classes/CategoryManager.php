@@ -107,79 +107,6 @@ class CategoryManager
         return $categoryMap;
     }
 
-    // /**
-    //  * Creates or gets existing category
-    //  *
-    //  * @param stdClass $veranstalter
-    //  * @param int      $parentId
-    //  * @return int Category ID
-    //  * @throws CategoryCreationException
-    //  */
-    // private function ensureCategoryExists(stdClass $veranstalter, int $parentId): int
-    // {
-    //     $cacheKey = "category_veranstalter_{$veranstalter->IDBenutzer}";
-
-    //     // Check cache
-    //     $cachedId = $this->cache->get($cacheKey);
-    //     if ($cachedId !== false) {
-    //         return $cachedId;
-    //     }
-
-    //     try {
-    //         // Check database
-    //         $existing = $this->db->get_record('course_categories', [
-    //             'idnumber' => $veranstalter->IDBenutzer
-    //         ]);
-
-    //         if ($existing) {
-    //             // Get existing category through our wrapper
-    //             $category = EventoCourseCategory::get($existing->id);
-    //             $categoryId = $category->getId();
-    //         } else {
-    //             // Create new category using Moodle's core API first
-    //             $data = [
-    //                 'name' => $veranstalter->benutzerName,
-    //                 'idnumber' => $veranstalter->IDBenutzer,
-    //                 'parent' => $parentId,
-    //                 'visible' => 1
-    //             ];
-                
-    //             // Create the base category
-    //             $baseCategory = core_course_category::create($data);
-                
-    //             // Create default Evento settings
-    //             $settings = EventoCategorySettings::createForCategory(
-    //                 $baseCategory->id,
-    //                 [] // Empty array for default settings
-    //             );
-                
-    //             // Now we can get our wrapped version
-    //             $category = EventoCourseCategory::get($baseCategory->id);
-    //             $categoryId = $category->getId();
-
-    //             $this->logger->info("Created category", [
-    //                 'name' => $data['name'],
-    //                 'id' => $categoryId
-    //             ]);
-    //         }
-
-    //         // Cache the result
-    //         $this->cache->set($cacheKey, $categoryId);
-
-    //         return $categoryId;
-    //     } catch (Exception $e) {
-    //         $this->logger->error("Failed to create category", [
-    //             'error' => $e->getMessage(),
-    //             'veranstalter' => $veranstalter->IDBenutzer
-    //         ]);
-    //         throw new CategoryCreationException(
-    //             "Failed to create category: " . $e->getMessage(),
-    //             0,
-    //             $e
-    //         );
-    //     }
-    // }
-
     /**
      * Creates or gets existing category
      *
@@ -316,12 +243,14 @@ class CategoryManager
      * @param stdClass $event
      * @param EventoCourseCategory $parentCategory
      * @param EventoConfiguration $config
+     * @param previewMode $bool
      * @return EventoCourseCategory
      */
     public function getPeriodSubcategory(
         stdClass $event,
         EventoCourseCategory $parentCategory,
-        EventoConfiguration $config
+        EventoConfiguration $config,
+        bool $previewMode = false
     ): EventoCourseCategory {
         // Early return if categorization is disabled or missing date
         if (empty($event->anlassDatumVon)) {
@@ -330,10 +259,14 @@ class CategoryManager
 
         // Check category-specific settings first
         $categorySettings = $parentCategory->getEventoSettings();
+        
+        // If settings are null or subcategory organization is set to 0 (none),
+        // return the parent category directly
         if ($categorySettings === null || $categorySettings->getSubCatOrganization() === 0) {
             return $parentCategory;
         }
 
+        // For options 1 and 2, create period subcategories
         $periodName = $this->determinePeriodName($event, $categorySettings);
 
         // Check existing subcategories
@@ -341,6 +274,15 @@ class CategoryManager
             if ($subcategory->getName() === $periodName) {
                 return $subcategory;
             }
+        }
+
+        // If in preview mode, return the parent category with info in logs
+        if ($previewMode) {
+            $this->logger->info("Preview mode: Would create period subcategory", [
+                'period' => $periodName,
+                'parent' => $parentCategory->getId()
+            ]);
+            return $parentCategory;
         }
 
         // Create new subcategory
@@ -366,14 +308,19 @@ class CategoryManager
     private function determinePeriodName(stdClass $event, EventoCategorySettings $settings): string
     {
         $startDate = strtotime($event->anlassDatumVon);
-        $year = date('y', $startDate);
-        $fullYear = date('Y', $startDate);
-
-        if ($settings->getSubCatOrganization() === 3) {
-            return $fullYear;
+        
+        // Use the same logic as in CourseNaming::getPeriod
+        switch ($settings->getSubCatOrganization()) {
+            case 0:
+                return date('Ymd', $startDate);
+            case 1:
+                $month = (int)date('n', $startDate);
+                $year = date('y', $startDate);
+                return ($month >= 8) ? "HS{$year}" : "FS{$year}";
+            case 2:
+                return date('Y', $startDate);
+            default:
+                return date('Ymd', $startDate);
         }
-
-        $month = (int)date('n', $startDate);
-        return ($month >= 8) ? "HS{$year}" : "FS{$year}";
     }
 }

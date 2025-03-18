@@ -16,7 +16,7 @@ class CourseSettings {
      * @param int|null $templateCourse Template course ID if enabled
      * @param bool $setCustomCourseStartTime Whether to use custom start time
      * @param int $startTimeCourse Default course start time
-     * @param int $defaultSubcatOrganization Default subcategory organization type
+     * @param int $subcatOrganization Default subcategory organization type
      * @param string $longNameTemplate Template for course long names
      * @param string $shortNameTemplate Template for course short names
      */
@@ -28,7 +28,7 @@ class CourseSettings {
         private readonly ?int $templateCourse,
         private readonly bool $setCustomCourseStartTime,
         private readonly int $startTimeCourse,
-        private readonly int $defaultSubcatOrganization,
+        private readonly int $subcatOrganization,
         private readonly string $longNameTemplate,
         private readonly string $shortNameTemplate
     ) {}
@@ -71,7 +71,7 @@ class CourseSettings {
     /**
      * @return bool
      */
-    public function hasCustomStartTime(): bool {
+    public function getSetCustomStartTime(): bool {
         return $this->setCustomCourseStartTime;
     }
 
@@ -85,8 +85,8 @@ class CourseSettings {
     /**
      * @return int
      */
-    public function getDefaultSubcatOrganization(): int {
-        return $this->defaultSubcatOrganization;
+    public function getSubcatOrganization(): int {
+        return $this->subcatOrganization;
     }
 
     /**
@@ -117,7 +117,7 @@ class CourseSettings {
             'templatecourse' => $this->templateCourse,
             'setcustomcoursestarttime' => $this->setCustomCourseStartTime,
             'starttimecourse' => $this->startTimeCourse,
-            'defaultsubcatorganization' => $this->defaultSubcatOrganization,
+            'subcatorganization' => $this->subcatOrganization,
             'longcoursenaming' => $this->longNameTemplate,
             'shortcoursenaming' => $this->shortNameTemplate
         ];

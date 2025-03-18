@@ -24,6 +24,7 @@
 
 require('../../config.php');
 require_once($CFG->libdir .'/weblib.php');
+require_once($CFG->dirroot . '/local/eventocoursecreation/lib.php');
 //require_once($CFG->libdir.'/coursecatlib.php'); deprecated since Moodle 3.10
 
 require_login(true);
@@ -54,6 +55,34 @@ if ($catid) {
 } else {
     debugging('No category is set!', DEBUG_DEVELOPER);
     redirect ($manageurl);
+}
+
+// Check if this is a semester/year subcategory
+if (!empty($category->idnumber) && local_eventocoursecreation_is_semester_subcategory($category->idnumber)) {
+    // Get the parent Veranstalter ID
+    $parentIdNumber = '';
+    
+    if (preg_match('/(.+)_(?:FS|HS)\d{2}$/', $category->idnumber, $matches)) {
+        $parentIdNumber = $matches[1];
+    } else if (preg_match('/(.+)_20\d{2}$/', $category->idnumber, $matches)) {
+        $parentIdNumber = $matches[1];
+    }
+    
+    // Try to find the parent category for a better message
+    $parentCategory = null;
+    if (!empty($parentIdNumber)) {
+        $parentCategory = $DB->get_record('course_categories', ['idnumber' => $parentIdNumber]);
+    }
+    
+    $message = get_string('evento_settings_unavailable_for_subcategory', 'local_eventocoursecreation');
+    if ($parentCategory) {
+        $parentUrl = new moodle_url('/local/eventocoursecreation/setting_form.php', 
+            ['contextid' => context_coursecat::instance($parentCategory->id)->id]);
+        $message .= ' ' . get_string('evento_settings_edit_parent', 'local_eventocoursecreation', 
+            ['category' => format_string($parentCategory->name), 'url' => $parentUrl->out()]);
+    }
+    
+    redirect($manageurl, $message, null, \core\output\notification::NOTIFY_INFO);
 }
 
 require_capability('moodle/category:manage', $context);

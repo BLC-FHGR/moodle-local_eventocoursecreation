@@ -18,14 +18,36 @@
  * Evento course creation plugin
  *
  * @package    local_eventocoursecreation
- * @copyright  2018 HTW Chur Roger Barras
+ * @copyright  2025 HTW FHGR Julien Rädler
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die;
 
 /**
- * This function adds a Course Creation setting node to a categorie if the categorie idnumber is set.
+ * Determines if a category is a semester/year subcategory
+ * 
+ * @param string $idNumber The category idnumber
+ * @return bool True if it's a subcategory
+ */
+function local_eventocoursecreation_is_semester_subcategory(string $idNumber): bool
+{
+    // Check for typical semester pattern at the end (FS## or HS##)
+    if (preg_match('/_(?:FS|HS)\d{2}$/', $idNumber)) {
+        return true;
+    }
+    
+    // Check for year pattern at the end (_YYYY)
+    if (preg_match('/_20\d{2}$/', $idNumber)) {
+        return true;
+    }
+    
+    return false;
+}
+
+/**
+ * This function adds a Course Creation setting node to a category if the category idnumber is set
+ * and it's not a semester/year subcategory.
  *
  * @param navigation_node $parentnode The navigation node to extend
  * @param context_coursecat $context The context of the course category
@@ -34,6 +56,15 @@ function local_eventocoursecreation_extend_navigation_category_settings(
     navigation_node $parentnode, 
     context_coursecat $context
 ) {
+    global $DB;
+    
+    // Get the category information
+    $category = $DB->get_record('course_categories', ['id' => $context->instanceid]);
+    
+    // Skip if it's a semester/year subcategory
+    if (!empty($category->idnumber) && local_eventocoursecreation_is_semester_subcategory($category->idnumber)) {
+        return;
+    }
 
     // Add the navigation node
     $pluginname = get_string('pluginname', 'local_eventocoursecreation');

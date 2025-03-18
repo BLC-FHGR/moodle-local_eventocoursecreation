@@ -2,6 +2,9 @@
 
 namespace local_eventocoursecreation;
 
+use local_eventocoursecreation\api\EventoApiCache;
+use local_eventocoursecreation\api\SmartEventFetcher;
+use local_eventocoursecreation\api\ParallelEventFetcher;
 use progress_trace;
 
 /**
@@ -22,11 +25,11 @@ class ServiceContainer
     /**
      * Constructor
      *
-     * @param progress_trace $trace
+     * @param progress_trace|null $trace Optional trace (defaults to null_progress_trace)
      */
-    public function __construct(progress_trace $trace)
+    public function __construct(progress_trace $trace = null)
     {
-        $this->trace = $trace;
+        $this->trace = $trace ?? new \null_progress_trace();
     }
 
     /**
@@ -44,7 +47,8 @@ class ServiceContainer
                 $this->getLogger(),
                 $this->getEventoService(),
                 $this->getCategoryManager(),
-                $this->getTemplateManager()
+                $this->getTemplateManager(),
+                $this->getApiCache()
             );
         }
 
@@ -120,7 +124,7 @@ class ServiceContainer
      *
      * @return EventoLogger
      */
-    private function getLogger(): EventoLogger
+    public function getLogger(): EventoLogger
     {
         if (!isset($this->services[EventoLogger::class])) {
             $this->services[EventoLogger::class] = new EventoLogger($this->trace);
@@ -146,7 +150,7 @@ class ServiceContainer
      *
      * @return \local_evento_evento_service
      */
-    private function getEventoService(): \local_evento_evento_service
+    public function getEventoService(): \local_evento_evento_service
     {
         if (!isset($this->services[\local_evento_evento_service::class])) {
             $this->services[\local_evento_evento_service::class] = new \local_evento_evento_service(
@@ -174,5 +178,75 @@ class ServiceContainer
             );
         }
         return $this->services[CategoryManager::class];
+    }
+
+    /**
+     * Gets the EventoApiCache instance
+     *
+     * @return EventoApiCache
+     */
+    public function getApiCache(): EventoApiCache
+    {
+        if (!isset($this->services[EventoApiCache::class])) {
+            $this->services[EventoApiCache::class] = new EventoApiCache();
+        }
+        return $this->services[EventoApiCache::class];
+    }
+    
+    /**
+     * Gets the SmartEventFetcher instance
+     * 
+     * @param array $config Optional configuration overrides
+     * @return SmartEventFetcher
+     */
+    public function getSmartEventFetcher(array $config = []): SmartEventFetcher
+    {
+        // Create a new instance each time with custom config
+        return new SmartEventFetcher(
+            $this->getEventoService(),
+            $this->getApiCache(),
+            $this->getLogger(),
+            $config
+        );
+    }
+    
+    /**
+     * Gets the ParallelEventFetcher instance
+     * 
+     * @param array $config Optional configuration overrides
+     * @return ParallelEventFetcher
+     */
+    public function getParallelEventFetcher(array $config = []): ParallelEventFetcher
+    {
+        // Create a new instance each time with custom config
+        return new ParallelEventFetcher(
+            $this->getApiCache(),
+            $config,
+            $this->getLogger()
+        );
+    }
+    
+    /**
+     * Register a service instance
+     * 
+     * @param string $class Class name
+     * @param mixed $instance Service instance
+     * @return self For method chaining
+     */
+    public function registerService(string $class, $instance): self
+    {
+        $this->services[$class] = $instance;
+        return $this;
+    }
+    
+    /**
+     * Get a service by class name
+     * 
+     * @param string $class Class name
+     * @return mixed|null The service instance or null if not found
+     */
+    public function getService(string $class)
+    {
+        return $this->services[$class] ?? null;
     }
 }

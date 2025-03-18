@@ -15,17 +15,41 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Cache definitions.
+ * Cache definitions for Evento Course Creation
  *
  * @package    local_eventocoursecreation
- * @copyright  2018, HTW chur {@link http://www.htwchur.ch}
+ * @copyright  2025 Your Name
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die();
 
-$definitions = array(
-    'coursecreation' => array(
+$definitions = [
+    'eventocreation_api' => [
+        'mode' => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => false, // We store complex data including objects
+        'staticacceleration' => true,
+        'staticaccelerationsize' => 100, // Limit number of items in static cache
+        'ttl' => 3600, // 1 hour default TTL
+    ],
+    'eventocreation_veranstalter' => [
+        'mode' => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => false,
+        'staticacceleration' => true,
+        'staticaccelerationsize' => 30, // Reasonable number of Veranstalter
+        'ttl' => 86400, // 24 hours - Veranstalter data changes less frequently
+    ],
+    'eventocreation_events' => [
+        'mode' => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => false,
+        'staticacceleration' => true,
+        'staticaccelerationsize' => 50, // Event sets per Veranstalter
+        'ttl' => 3600, // 1 hour
+    ],
+    'coursecreation' => [
         'mode' => cache_store::MODE_REQUEST,
-    )
-);
+    ],
+];

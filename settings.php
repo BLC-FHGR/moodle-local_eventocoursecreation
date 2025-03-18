@@ -164,4 +164,88 @@ if ($hassiteconfig) {
         EVENTOCOURSECREATION_SUBCAT_SEMESTER,
         $options
     ));
+
+    // NEW SECTION: Event Fetching Settings
+    $settings->add(new admin_setting_heading('eventofetching',
+        get_string('eventofetching', 'local_eventocoursecreation'),
+        get_string('eventofetching_help', 'local_eventocoursecreation')));
+
+    // Fetching mode
+    $fetchingmodes = array(
+        'classic' => get_string('fetching_mode_classic', 'local_eventocoursecreation'),
+        'smart' => get_string('fetching_mode_smart', 'local_eventocoursecreation'),
+        'fast' => get_string('fetching_mode_fast', 'local_eventocoursecreation'),
+        'parallel' => get_string('fetching_mode_parallel', 'local_eventocoursecreation')
+    );
+    $settings->add(new admin_setting_configselect('local_eventocoursecreation/fetching_mode',
+        get_string('fetching_mode', 'local_eventocoursecreation'),
+        get_string('fetching_mode_desc', 'local_eventocoursecreation'),
+        'smart',
+        $fetchingmodes));
+
+    // Batch size
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/batch_size',
+        get_string('batch_size', 'local_eventocoursecreation'),
+        get_string('batch_size_desc', 'local_eventocoursecreation'),
+        '200',
+        PARAM_INT));
+
+    // Min batch size
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/min_batch_size',
+        get_string('min_batch_size', 'local_eventocoursecreation'),
+        get_string('min_batch_size_desc', 'local_eventocoursecreation'),
+        '10',
+        PARAM_INT));
+
+    // Max batch size
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/max_batch_size',
+        get_string('max_batch_size', 'local_eventocoursecreation'),
+        get_string('max_batch_size_desc', 'local_eventocoursecreation'),
+        '1000',
+        PARAM_INT));
+
+    // Adaptive batch sizing
+    $settings->add(new admin_setting_configcheckbox('local_eventocoursecreation/adaptive_batch_sizing',
+        get_string('adaptive_batch_sizing', 'local_eventocoursecreation'),
+        get_string('adaptive_batch_sizing_desc', 'local_eventocoursecreation'),
+        1));
+
+    // Date chunk fallback
+    $settings->add(new admin_setting_configcheckbox('local_eventocoursecreation/date_chunk_fallback',
+        get_string('date_chunk_fallback', 'local_eventocoursecreation'),
+        get_string('date_chunk_fallback_desc', 'local_eventocoursecreation'),
+        1));
+
+    // Date chunk days
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/date_chunk_days',
+        get_string('date_chunk_days', 'local_eventocoursecreation'),
+        get_string('date_chunk_days_desc', 'local_eventocoursecreation'),
+        '90',
+        PARAM_INT));
+
+    // Max API retries
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/max_api_retries',
+        get_string('max_api_retries', 'local_eventocoursecreation'),
+        get_string('max_api_retries_desc', 'local_eventocoursecreation'),
+        '3',
+        PARAM_INT));
+
+    // Cache TTL
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/cache_ttl',
+        get_string('cache_ttl', 'local_eventocoursecreation'),
+        get_string('cache_ttl_desc', 'local_eventocoursecreation'),
+        '3600', // 1 hour
+        PARAM_INT));
+
+    // Add admin page links
+    $ADMIN->add('localplugins', new admin_category('localevento', 
+        get_string('pluginname', 'local_eventocoursecreation')));
+        
+    $ADMIN->add('localevento', new admin_externalpage('local_eventocoursecreation_apimonitor',
+        get_string('apimonitor', 'local_eventocoursecreation'),
+        new moodle_url('/local/eventocoursecreation/admin/api_monitor.php')));
+        
+    $ADMIN->add('localevento', new admin_externalpage('local_eventocoursecreation_debug',
+        get_string('debugpage', 'local_eventocoursecreation'),
+        new moodle_url('/local/eventocoursecreation/admin/debug.php')));
 }

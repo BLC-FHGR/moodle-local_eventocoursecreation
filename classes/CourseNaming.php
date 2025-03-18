@@ -48,12 +48,11 @@ class CourseNaming
         EventoCategorySettings $categorySettings,
         CourseRepository $courseRepository
     ) {
+        $this->categorySettings = $this->resolveVeranstalterSettings($categorySettings);
         $this->event = $event;
-        $this->categorySettings = $categorySettings;
         $this->courseRepository = $courseRepository;
         $this->components = $this->parseComponents();
         $this->eventoConfig = EventoConfiguration::getInstance();
-
     }
 
     /**
@@ -75,6 +74,96 @@ class CourseNaming
     {
         $baseName = $this->createName($this->components, false);
         return $this->makeUnique($baseName);
+    }
+
+    /**
+     * Resolves the appropriate Veranstalter settings
+     * 
+     * @param EventoCategorySettings $categorySettings The current category settings
+     * @return EventoCategorySettings The resolved Veranstalter settings
+     */
+    private function resolveVeranstalterSettings(EventoCategorySettings $categorySettings): EventoCategorySettings
+    {
+        global $DB;
+        
+        // Get the category record to access its idnumber
+        $category = $DB->get_record('course_categories', ['id' => $categorySettings->getCategory()]);
+        
+        if (!$category || empty($category->idnumber)) {
+            return $categorySettings;
+        }
+        
+        $idNumber = $category->idnumber;
+        
+        // Check if this is a semester/year subcategory
+        if ($this->isSemesterSubcategory($idNumber)) {
+            $parentIdNumber = $this->getParentVeranstalterId($idNumber);
+            
+            // Find the parent category by idnumber
+            $parentCategory = $this->findCategoryByIdNumber($parentIdNumber);
+            if ($parentCategory) {
+                $parentSettings = EventoCategorySettings::getForCategory($parentCategory->id);
+                if ($parentSettings) {
+                    return $parentSettings;
+                }
+            }
+        }
+        
+        return $categorySettings;
+    }
+
+    /**
+     * Determines if a category is a semester/year subcategory
+     * 
+     * @param string $idNumber The category idnumber
+     * @return bool True if it's a subcategory
+     */
+    private function isSemesterSubcategory(string $idNumber): bool
+    {
+        // Check for typical semester pattern at the end (FS## or HS##)
+        if (preg_match('/_(?:FS|HS)\d{2}$/', $idNumber)) {
+            return true;
+        }
+        
+        // Check for year pattern at the end (_YYYY)
+        if (preg_match('/_20\d{2}$/', $idNumber)) {
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * Gets the parent Veranstalter ID from a subcategory idnumber
+     * 
+     * @param string $idNumber The subcategory idnumber
+     * @return string The parent Veranstalter ID
+     */
+    private function getParentVeranstalterId(string $idNumber): string
+    {
+        // Remove semester/year suffix
+        if (preg_match('/(.+)_(?:FS|HS)\d{2}$/', $idNumber, $matches)) {
+            return $matches[1];
+        }
+        
+        if (preg_match('/(.+)_20\d{2}$/', $idNumber, $matches)) {
+            return $matches[1];
+        }
+        
+        // If we can't determine the parent, return the original
+        return $idNumber;
+    }
+
+    /**
+     * Finds a category by its idnumber
+     * 
+     * @param string $idNumber The idnumber to look for
+     * @return stdClass|null The category record or null
+     */
+    private function findCategoryByIdNumber(string $idNumber)
+    {
+        global $DB;
+        return $DB->get_record('course_categories', ['idnumber' => $idNumber]);
     }
 
     /**
@@ -121,6 +210,8 @@ class CourseNaming
             case 2:
                 $returnVal = date('Y', $timestamp);
                 break;
+            default:
+                $returnVal = date('Ymd', $timestamp);
         }
         
         return $returnVal;

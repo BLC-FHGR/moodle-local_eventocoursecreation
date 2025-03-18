@@ -87,31 +87,50 @@ class EventoCategorySettings {
      * Create new settings for a category
      *
      * @param int $categoryId Moodle category ID
-     * @param array $data Settings data
+     * @param array|null $data Custom settings data (optional)
      * @return self New settings object
      * @throws coding_exception|dml_exception
      */
-    public static function createForCategory(int $categoryId, array $data): self {
+    public static function createForCategory(int $categoryId, ?array $data = null): self {
         global $DB;
 
+        // Get defaults from global configuration
+        $config = EventoConfiguration::getInstance();
+        
+        // Start with global defaults
         $record = new stdClass();
         $record->category = $categoryId;
-        $record->templatecourse = $data['templatecourse'] ?? null;
-        $record->enablecoursetemplate = !empty($data['enablecoursetemplate']);
-        $record->enablecatcoursecreation = !empty($data['enablecatcoursecreation']);
-        $record->starttimespringtermday = $data['starttimespringtermday'] ?? 1;
-        $record->starttimespringtermmonth = $data['starttimespringtermmonth'] ?? 1;
-        $record->execonlyonstarttimespringterm = !empty($data['execonlyonstarttimespringterm']);
-        $record->starttimeautumntermday = $data['starttimeautumntermday'] ?? 1;
-        $record->starttimeautumntermmonth = $data['starttimeautumntermmonth'] ?? 8;
-        $record->execonlyonstarttimeautumnterm = !empty($data['execonlyonstarttimeautumnterm']);
-        $record->coursevisibility = !empty($data['coursevisibility']);
-        $record->newsitemsnumber = $data['newsitemsnumber'] ?? 5;
-        $record->numberofsections = $data['numberofsections'] ?? 10;
-        $record->subcatorganization = $data['subcatorganization'] ?? 0;
-        $record->starttimecourse = $data['starttimecourse'] ?? time();
-        $record->setcustomcoursestarttime = !empty($data['setcustomcoursestarttime']);
+        $record->templatecourse = $config->getCourseSettings()->getTemplateCourse();
+        $record->enablecoursetemplate = $config->getCourseSettings()->isTemplateCourseEnabled();
+        $record->enablecatcoursecreation = true; // Default to enabled
+        
+        // Term settings
+        $termSettings = $config->getTermSettings();
+        $record->starttimespringtermday = $termSettings->getSpringTermStartDay();
+        $record->starttimespringtermmonth = $termSettings->getSpringTermStartMonth();
+        $record->execonlyonstarttimespringterm = false; // Default to false
+        $record->starttimeautumntermday = $termSettings->getAutumnTermStartDay();
+        $record->starttimeautumntermmonth = $termSettings->getAutumnTermStartMonth();
+        $record->execonlyonstarttimeautumnterm = false; // Default to false
+        
+        // Course settings
+        $courseSettings = $config->getCourseSettings();
+        $record->coursevisibility = $courseSettings->getCourseVisibility();
+        $record->newsitemsnumber = $courseSettings->getNewsItemsNumber();
+        $record->numberofsections = $courseSettings->getNumberOfSections();
+        $record->subcatorganization = $courseSettings->getSubCatOrganization();
+        $record->starttimecourse = $courseSettings->getStartTimeCourse();
+        $record->setcustomcoursestarttime = $courseSettings->getSetCustomStartTime();
         $record->timemodified = time();
+        
+        // Override with custom data if provided
+        if (!empty($data)) {
+            foreach ($data as $key => $value) {
+                if (property_exists($record, $key)) {
+                    $record->$key = $value;
+                }
+            }
+        }
 
         $record->id = $DB->insert_record(self::TABLE, $record);
         
