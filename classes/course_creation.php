@@ -231,6 +231,7 @@ class local_eventocoursecreation_course_creation {
                                     }
                                     // Add main course enrolment to main course
                                     $fields = $this->enrolplugin->get_instance_defaults();
+                                    $fields = $this->enrolplugin->set_custom_coursenumber($fields, $event->anlassNummer);
                                     $this->enrolplugin->add_instance($moodlecourse, $fields);
                                     $this->trace->output('Evento enrolment ' . $event->anlassNummer . ' added to it\'s Moodle course...');
                                 }
@@ -243,14 +244,22 @@ class local_eventocoursecreation_course_creation {
 
                                 // Add Evento enrolment instance ONLY if the instance is not in the course.
                                 if (isset($moodlecourse) && isset($this->enrolplugin) && enrol_is_enabled('evento')) {
-                                    $fields = $this->enrolplugin->get_instance_defaults();
-                                    if (in_array("gm", $catoptions)) {
-                                        // for "gemeinsame Module" add enrolment with alternative event number.
-                                        $fields = $this->enrolplugin->set_custom_coursenumber($fields, $event->anlassNummer);
-                                        $fields['name'] = 'Evento ' . $event->anlassNummer;
+                                    // Double-check that the enrolment doesn't exist (prevents race conditions and duplicates)
+                                    if (!$this->enrolplugin->instance_exists_by_eventnumber($moodlecourse, $event->anlassNummer)) {
+                                        $fields = $this->enrolplugin->get_instance_defaults();
+                                        if (in_array("gm", $catoptions)) {
+                                            // for "gemeinsame Module" add enrolment with alternative event number.
+                                            $fields = $this->enrolplugin->set_custom_coursenumber($fields, $event->anlassNummer);
+                                            $fields['name'] = 'Evento ' . $event->anlassNummer;
+                                        } else {
+                                            // Set custom course number for regular enrolments too
+                                            $fields = $this->enrolplugin->set_custom_coursenumber($fields, $event->anlassNummer);
+                                        }
+                                        $this->enrolplugin->add_instance($moodlecourse, $fields);
+                                        $this->trace->output('Evento enrolment ' . $event->anlassNummer . ' added to it\'s Moodle course...');
+                                    } else {
+                                        $this->trace->output('Evento enrolment ' . $event->anlassNummer . ' already exists in course, skipping duplicate...');
                                     }
-                                    $this->enrolplugin->add_instance($moodlecourse, $fields);
-                                    $this->trace->output('Evento enrolment ' . $event->anlassNummer . ' added to it\'s Moodle course...');
                                 }
                             } catch (SoapFault $fault) {
                                 debugging("Soapfault : ". $fault->__toString());
