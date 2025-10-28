@@ -179,29 +179,47 @@ class local_eventocoursecreation_course_creation {
                                                 $this->trace->output('Evento "Parallelanlass" ' . $event->anlassNummer . ' doesn\'t have a main course...');
                                                 continue;
                                             }
-                                        }
-                                        // Get the Moodle course for this main event
-                                        // Checks if this is a new sub event for an old course
-                                        $moodlecourse = $DB->get_record_sql('SELECT * FROM {course} WHERE idnumber LIKE ?', ["%" . $mainevent->anlassNummer . "%"]);
-                                        if (!isset($moodlecourse->id)) {
-                                            $this->trace->output('Wait to add evento "Parallelanlass" ' . $event->anlassNummer . ' to it\'s main course...');
-                                            array_push($this->subcourseenrolments, $event);
-                                            continue;
-                                        }
 
-                                        // Check if the enrolment is already in the old course
-                                        if ($DB->record_exists_sql('SELECT * FROM {enrol} WHERE courseid = ? AND customtext1 = ?', [$moodlecourse->id, $event->anlassNummer])) {
-                                            $this->trace->output('"Parallelanlass" ' . $event->anlassNummer . ' already in it\'s main course...');
+                                            // Detect circular "Parallelanlass" reference
+                                            // If the main event points back to this event, and neither is marked as Hauptanlass
+                                            if (!is_null($mainevent->anlass_Zusatz15) && 
+                                                $mainevent->anlass_Zusatz15 == $event->idAnlass &&
+                                                !($mainevent->anlass_Zusatz15 === $mainevent->idAnlass)) {
+                                                $this->trace->output('WARNING: Circular "Parallelanlass" reference detected between ' . 
+                                                    $event->anlassNummer . ' and ' . $mainevent->anlassNummer . 
+                                                    '. Both will be created as separate courses to avoid duplicate enrollments.');
+                                                // Set mainevent to null to break out of sub-event logic
+                                                // This will cause the event to create its own course below
+                                                $mainevent = null;
+                                            }
+                                        }
+                                        
+                                        // Only process as sub-event if we have a valid main event (not circular)
+                                        if (!is_null($mainevent)) {
+                                            // Get the Moodle course for this main event
+                                            // Checks if this is a new sub event for an old course
+                                            $moodlecourse = $DB->get_record_sql('SELECT * FROM {course} WHERE idnumber LIKE ?', ["%" . $mainevent->anlassNummer . "%"]);
+                                            if (!isset($moodlecourse->id)) {
+                                                $this->trace->output('Wait to add evento "Parallelanlass" ' . $event->anlassNummer . ' to it\'s main course...');
+                                                array_push($this->subcourseenrolments, $event);
+                                                continue;
+                                            }
+
+                                            // Check if the enrolment is already in the old course
+                                            if ($DB->record_exists_sql('SELECT * FROM {enrol} WHERE courseid = ? AND customtext1 = ?', [$moodlecourse->id, $event->anlassNummer])) {
+                                                $this->trace->output('"Parallelanlass" ' . $event->anlassNummer . ' already in it\'s main course...');
+                                                continue;
+                                            }
+                                            // Add sub event enrolment to main event course
+                                            $fields = $this->enrolplugin->get_instance_defaults();
+                                            // use the sub event "anlassNummer"
+                                            $fields = $this->enrolplugin->set_custom_coursenumber($fields, $event->anlassNummer);
+                                            $fields['name'] = 'Evento Parallelanlass';
+                                            $this->enrolplugin->add_instance($moodlecourse, $fields);
+                                            $this->trace->output('Evento "Parallelanlass" enrolment ' . $event->anlassNummer . ' added to it\'s main course ' . $mainevent->anlassNummer . '...');
                                             continue;
                                         }
-                                        // Add sub event enrolment to main event course
-                                        $fields = $this->enrolplugin->get_instance_defaults();
-                                        // use the sub event "anlassNummer"
-                                        $fields = $this->enrolplugin->set_custom_coursenumber($fields, $event->anlassNummer);
-                                        $fields['name'] = 'Evento Parallelanlass';
-                                        $this->enrolplugin->add_instance($moodlecourse, $fields);
-                                        $this->trace->output('Evento "Parallelanlass" enrolment ' . $event->anlassNummer . ' added to it\'s main course ' . $mainevent->anlassNummer . '...');
-                                        continue;
+                                        // If mainevent is null (circular reference detected), fall through to create own course
                                     }
                                     // Create an empty course.
                                     $moodlecourse = $this->create_new_course($event, $subcat->id, $setting);
@@ -214,13 +232,18 @@ class local_eventocoursecreation_course_creation {
                                     // Check for sub event enrolments
                                     foreach ($this->subcourseenrolments as $key => $subcourse) {
                                         if ($subcourse->anlass_Zusatz15 === $event->idAnlass) {
-                                            // Add sub event enrolment to main event course
-                                            $fields = $this->enrolplugin->get_instance_defaults();
-                                            // use the sub event "anlassNummer"
-                                            $fields = $this->enrolplugin->set_custom_coursenumber($fields, $subcourse->anlassNummer);
-                                            $fields['name'] = 'Evento Parallelanlass';
-                                            $this->enrolplugin->add_instance($moodlecourse, $fields);
-                                            $this->trace->output('Evento "Parallelanlass" enrolment ' . $subcourse->anlassNummer . ' added to it\'s main course ' . $event->anlassNummer . '...');
+                                            // Check if the enrolment already exists to prevent duplicates
+                                            if (!$this->enrolplugin->instance_exists_by_eventnumber($moodlecourse, $subcourse->anlassNummer)) {
+                                                // Add sub event enrolment to main event course
+                                                $fields = $this->enrolplugin->get_instance_defaults();
+                                                // use the sub event "anlassNummer"
+                                                $fields = $this->enrolplugin->set_custom_coursenumber($fields, $subcourse->anlassNummer);
+                                                $fields['name'] = 'Evento Parallelanlass';
+                                                $this->enrolplugin->add_instance($moodlecourse, $fields);
+                                                $this->trace->output('Evento "Parallelanlass" enrolment ' . $subcourse->anlassNummer . ' added to it\'s main course ' . $event->anlassNummer . '...');
+                                            } else {
+                                                $this->trace->output('Evento "Parallelanlass" enrolment ' . $subcourse->anlassNummer . ' already exists in course, skipping duplicate...');
+                                            }
                                             // Remove sub events which have been linked to a main event
                                             unset($this->subcourseenrolments[$key]);
                                         }
