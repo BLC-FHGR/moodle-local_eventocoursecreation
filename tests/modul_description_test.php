@@ -596,6 +596,32 @@ final class modul_description_test extends \advanced_testcase {
     }
 
     /**
+     * A page left over from an earlier import must not read as an up to date course.
+     */
+    public function test_status_for_action(): void {
+        // Evento offers nothing usable, no matter what the course still carries.
+        foreach (array(modul_description::ACTION_SKIP_NODESCRIPTION, modul_description::ACTION_SKIP_STATUS,
+                modul_description::ACTION_SKIP_FUTURE, modul_description::ACTION_SKIP_EMPTY,
+                modul_description::ACTION_SKIP_DELETED) as $action) {
+            $this->assertSame(EVENTOCOURSECREATION_MB_STATUS_MISSING,
+                modul_description::status_for_action($action, 4711), $action);
+            $this->assertSame(EVENTOCOURSECREATION_MB_STATUS_MISSING,
+                modul_description::status_for_action($action, null), $action);
+        }
+
+        // Evento offers a usable description, so only the page decides.
+        $this->assertSame(EVENTOCOURSECREATION_MB_STATUS_OK,
+            modul_description::status_for_action(modul_description::ACTION_NONE, 4711));
+        $this->assertSame(EVENTOCOURSECREATION_MB_STATUS_OK,
+            modul_description::status_for_action(modul_description::ACTION_UPDATE, 4711));
+        // A description evento offers but which is older than the imported one is fine.
+        $this->assertSame(EVENTOCOURSECREATION_MB_STATUS_OK,
+            modul_description::status_for_action(modul_description::ACTION_SKIP_OLDER, 4711));
+        $this->assertSame(EVENTOCOURSECREATION_MB_STATUS_MISSING,
+            modul_description::status_for_action(modul_description::ACTION_NONE, null));
+    }
+
+    /**
      * A link record alone is no proof that the course ever had a page.
      */
     public function test_had_a_page(): void {

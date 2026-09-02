@@ -178,7 +178,8 @@ class modul_description_sync {
 
         $anlassnummer = modul_description::resolve_anlassnummer($course);
         if (is_null($anlassnummer)) {
-            $this->note_check($course, '', null, 'the course carries no evento event number');
+            $this->note_check($course, '', null, 'the course carries no evento event number',
+                modul_description::ACTION_SKIP_NODESCRIPTION);
 
             return $this->finish($course, '', modul_description::ACTION_SKIP_NODESCRIPTION,
                 'the course carries no evento event number', null);
@@ -204,7 +205,8 @@ class modul_description_sync {
                 // An answer and not a failure. Neither the course nor the run may be held
                 // back for it, most modules simply carry no description in evento.
                 $this->note_check($course, $anlassnummer, $cmid,
-                    'evento knows no description for this event number');
+                    'evento knows no description for this event number',
+                    modul_description::ACTION_SKIP_NODESCRIPTION);
 
                 return $this->finish($course, $anlassnummer, modul_description::ACTION_SKIP_NODESCRIPTION,
                     'evento knows no description for this event number', $cmid);
@@ -275,7 +277,7 @@ class modul_description_sync {
             default:
                 // Every skip still notes that the course has been looked at, otherwise a course
                 // evento knows nothing about would sort to the front of every single batch.
-                $this->note_check($course, $anlassnummer, $cmid, $decision->reason);
+                $this->note_check($course, $anlassnummer, $cmid, $decision->reason, $decision->action);
                 break;
         }
 
@@ -368,9 +370,11 @@ class modul_description_sync {
      * @param string $anlassnummer the evento event number
      * @param int|null $cmid the course module of the page, null if the course has none
      * @param string|null $note why nothing was written, null if there was nothing to write
+     * @param string $action the action that led here, it decides the state to store
      * @return void
      */
-    protected function note_check(\stdClass $course, $anlassnummer, $cmid, $note = null) {
+    protected function note_check(\stdClass $course, $anlassnummer, $cmid, $note = null,
+            $action = modul_description::ACTION_NONE) {
         global $DB;
 
         $now = time();
@@ -387,8 +391,7 @@ class modul_description_sync {
         $record->courseid = $course->id;
         $record->anlassnummer = $anlassnummer;
         $record->cmid = $cmid;
-        $record->status = is_null($cmid)
-            ? EVENTOCOURSECREATION_MB_STATUS_MISSING : EVENTOCOURSECREATION_MB_STATUS_OK;
+        $record->status = modul_description::status_for_action($action, $cmid);
         $record->errorcount = 0;
         $record->lasterror = is_null($note) ? null : \core_text::substr($note, 0, 1000);
         $record->timechecked = $now;
@@ -424,7 +427,8 @@ class modul_description_sync {
                 'the page was deleted, this course is excluded from now on', null);
         }
 
-        $this->note_check($course, $anlassnummer, null, 'the page was deleted, it is not created again');
+        $this->note_check($course, $anlassnummer, null, 'the page was deleted, it is not created again',
+            modul_description::ACTION_SKIP_DELETED);
 
         return $this->finish($course, $anlassnummer, modul_description::ACTION_SKIP_DELETED,
             'the page was deleted, it is not created again', null);

@@ -751,6 +751,37 @@ class modul_description {
     }
 
     /**
+     * Returns the state to store for a course after a decision was carried out.
+     *
+     * A page alone does not mean that everything is in order. When evento offers no
+     * description, or one that must not be imported, the page in the course is left over
+     * from an earlier state, and the stored state has to say so instead of claiming that
+     * the course is up to date while carrying an explanation in the error field.
+     *
+     * @param string $action the action as decided by {@see self::decide()}
+     * @param int|null $cmid the course module of the page, null if the course has none
+     * @return int one of the EVENTOCOURSECREATION_MB_STATUS_ constants
+     */
+    public static function status_for_action($action, $cmid): int {
+        $nothingusable = array(
+            self::ACTION_SKIP_NODESCRIPTION,
+            self::ACTION_SKIP_STATUS,
+            self::ACTION_SKIP_FUTURE,
+            self::ACTION_SKIP_EMPTY,
+            self::ACTION_SKIP_DELETED,
+        );
+
+        if (in_array($action, $nothingusable, true)) {
+            return EVENTOCOURSECREATION_MB_STATUS_MISSING;
+        }
+
+        // Everything else means that evento offers a usable description, so the state
+        // only depends on whether the course carries the page it should carry.
+        return is_null($cmid)
+            ? EVENTOCOURSECREATION_MB_STATUS_MISSING : EVENTOCOURSECREATION_MB_STATUS_OK;
+    }
+
+    /**
      * Tells whether this plugin ever put a page into a course.
      *
      * A link record alone does not say so. One is written for every course that has been
