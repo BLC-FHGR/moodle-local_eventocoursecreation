@@ -432,7 +432,9 @@ final class modul_description_test extends \advanced_testcase {
         $normalized = $this->make_normalized();
 
         $result = modul_description::decide($record, $normalized, $record->contenthash, $record->contenthash,
-            $this->make_settings(), null, '<p>Version 0.9</p>', '<p>Version 1.0</p>');
+            $this->make_settings(), null,
+            modul_description::page_state('<p>Version 0.9</p>'),
+            modul_description::page_state('<p>Version 1.0</p>'));
 
         $this->assertSame(modul_description::ACTION_UPDATE, $result->action);
         $this->assertStringContainsString('description line', $result->reason);
@@ -446,7 +448,9 @@ final class modul_description_test extends \advanced_testcase {
         $normalized = $this->make_normalized();
 
         $result = modul_description::decide($record, $normalized, $record->contenthash, $record->contenthash,
-            $this->make_settings(), null, "<p>  Version 1.0 </p>\n", '<p>Version 1.0</p>');
+            $this->make_settings(), null,
+            modul_description::page_state("<p>  Version 1.0 </p>\n"),
+            modul_description::page_state('<p>Version 1.0</p>'));
 
         $this->assertSame(modul_description::ACTION_NONE, $result->action);
     }
@@ -459,10 +463,57 @@ final class modul_description_test extends \advanced_testcase {
         $normalized = $this->make_normalized(array('mbversionscaled' => 1100, 'mbversion' => 1.1));
 
         $result = modul_description::decide($record, $normalized, $record->contenthash, $record->contenthash,
-            $this->make_settings(), null, modul_description::build_intro($this->make_normalized()),
-            modul_description::build_intro($normalized));
+            $this->make_settings(), null,
+            modul_description::page_state(modul_description::build_intro($this->make_normalized())),
+            modul_description::page_state(modul_description::build_intro($normalized)));
 
         $this->assertSame(modul_description::ACTION_UPDATE, $result->action);
+    }
+
+    /**
+     * A page renamed by hand gets the configured name back.
+     */
+    public function test_decide_detects_a_renamed_page(): void {
+        $record = $this->make_record();
+        $normalized = $this->make_normalized();
+
+        $result = modul_description::decide($record, $normalized, $record->contenthash, $record->contenthash,
+            $this->make_settings(), null,
+            modul_description::page_state(null, 'Von Hand umbenannt'),
+            modul_description::page_state(null, 'Modulbeschreibung'));
+
+        $this->assertSame(modul_description::ACTION_UPDATE, $result->action);
+        $this->assertStringContainsString('renamed', $result->reason);
+    }
+
+    /**
+     * With the setting to keep the name the caller passes none, and nothing is written.
+     */
+    public function test_decide_keeps_a_renamed_page_when_configured(): void {
+        $record = $this->make_record();
+        $normalized = $this->make_normalized();
+
+        $result = modul_description::decide($record, $normalized, $record->contenthash, $record->contenthash,
+            $this->make_settings(), null,
+            modul_description::page_state(null, 'Von Hand umbenannt'),
+            modul_description::page_state(null, null));
+
+        $this->assertSame(modul_description::ACTION_NONE, $result->action);
+    }
+
+    /**
+     * Surrounding whitespace in a name is not a rename.
+     */
+    public function test_decide_ignores_whitespace_around_the_page_name(): void {
+        $record = $this->make_record();
+        $normalized = $this->make_normalized();
+
+        $result = modul_description::decide($record, $normalized, $record->contenthash, $record->contenthash,
+            $this->make_settings(), null,
+            modul_description::page_state(null, ' Modulbeschreibung '),
+            modul_description::page_state(null, 'Modulbeschreibung'));
+
+        $this->assertSame(modul_description::ACTION_NONE, $result->action);
     }
 
     /**

@@ -493,6 +493,26 @@ class modul_description {
     }
 
     /**
+     * Builds the object {@see self::decide()} compares the outside of a page with.
+     *
+     * Content and evento metadata are compared through the hash and the link record.
+     * Everything else a reader sees, and which no hash covers, is carried in here. A
+     * property left at null means that this part is not compared at all, which is how
+     * the setting to keep a name given by hand is expressed.
+     *
+     * @param string|null $intro the description of the page
+     * @param string|null $name the name of the page
+     * @return \stdClass object with the properties intro and name
+     */
+    public static function page_state($intro = null, $name = null): \stdClass {
+        $state = new \stdClass();
+        $state->intro = $intro;
+        $state->name = $name;
+
+        return $state;
+    }
+
+    /**
      * Reads the stored description of a page.
      *
      * @param \cm_info|\stdClass $cm the course module of the page
@@ -520,12 +540,12 @@ class modul_description {
      * @param string|null $currenthash hash of the content of the existing page, null if there is no page
      * @param \stdClass $settings the settings as returned by {@see self::get_settings()}
      * @param int|null $now the time to compare the validity against, defaults to the current time
-     * @param string|null $currentintro the description of the existing page, null skips the check
-     * @param string|null $newintro the description the page should carry, null skips the check
+     * @param \stdClass|null $current the state of the existing page, see {@see self::page_state()}
+     * @param \stdClass|null $wanted the state the page should be in, a null property skips that check
      * @return \stdClass object with the properties action and reason
      */
     public static function decide($record, $normalized, $newhash, $currenthash, \stdClass $settings, $now = null,
-            $currentintro = null, $newintro = null): \stdClass {
+            $current = null, $wanted = null): \stdClass {
         $now = is_null($now) ? time() : (int)$now;
 
         if (!is_object($normalized)) {
@@ -566,9 +586,17 @@ class modul_description {
         // Checked before the metadata, because version and validity are what the line shows.
         // Every metadata change that is visible to a reader is therefore written to the page
         // instead of only being noted in the link record.
-        if (!is_null($newintro)
-                && self::normalize_content($currentintro) !== self::normalize_content($newintro)) {
+        $wantedintro = is_object($wanted) ? $wanted->intro : null;
+        if (!is_null($wantedintro) && self::normalize_content(is_object($current) ? $current->intro : null)
+                !== self::normalize_content($wantedintro)) {
             return self::action(self::ACTION_UPDATE, 'the description line is out of date');
+        }
+        // A page renamed by hand is only brought back when the configuration asks for it,
+        // which the caller expresses by leaving the wanted name empty.
+        $wantedname = is_object($wanted) ? $wanted->name : null;
+        if (!is_null($wantedname)
+                && trim((string)(is_object($current) ? $current->name : null)) !== trim((string)$wantedname)) {
+            return self::action(self::ACTION_UPDATE, 'the page was renamed');
         }
         if (self::metadata_differs($record, $normalized)) {
             // The content is identical, so the page is left alone and only the link record moves on.

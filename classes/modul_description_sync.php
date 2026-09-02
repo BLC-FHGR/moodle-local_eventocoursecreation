@@ -226,13 +226,19 @@ class modul_description_sync {
         $content = is_null($normalized) ? '' : modul_description::clean_content($normalized->mbtext);
         $newhash = modul_description::content_hash($content);
 
-        // The description line is not part of the content and therefore not part of the hash.
-        // It is compared separately, so that a page whose line went stale is brought back.
+        // Neither the description line nor the name is part of the content and therefore
+        // neither is covered by the hash. Both are compared separately, so that a page whose
+        // line went stale or which was renamed by hand is brought back.
         $newintro = modul_description::build_intro($normalized);
-        $currentintro = is_null($cm) ? null : modul_description::get_page_intro($cm);
+        $newname = $this->settings->onrename === EVENTOCOURSECREATION_MB_ONRENAME_RESET
+            ? $this->settings->pagename : null;
+        $wanted = modul_description::page_state($newintro, $newname);
+        $current = is_null($cm)
+            ? null
+            : modul_description::page_state(modul_description::get_page_intro($cm), $cm->name);
 
         $decision = modul_description::decide($record, $normalized, $newhash, $currenthash, $this->settings,
-            null, $currentintro, $newintro);
+            null, $current, $wanted);
         $cmid = is_null($cm) ? null : (int)$cm->id;
 
         switch ($decision->action) {
@@ -248,9 +254,9 @@ class modul_description_sync {
                 break;
 
             case modul_description::ACTION_UPDATE:
-                $name = $this->settings->onrename === EVENTOCOURSECREATION_MB_ONRENAME_RESET
-                    ? $this->settings->pagename : null;
-                $cm = modul_description_page::update($course, $cm, $name, $content, $this->settings, $newintro);
+                // A null name keeps the one the page carries, which is what the setting to
+                // leave a name given by hand alone amounts to.
+                $cm = modul_description_page::update($course, $cm, $newname, $content, $this->settings, $newintro);
                 $cmid = (int)$cm->id;
                 $this->after_write($course, $cm, $normalized, $newhash, $anlassnummer);
                 break;
