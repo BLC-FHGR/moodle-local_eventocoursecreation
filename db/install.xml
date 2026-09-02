@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" PATH="local/eventocoursecreation/db" VERSION="2018220510" COMMENT="XMLDB file for Moodle local/eventocoursecreation" xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
+<XMLDB xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" PATH="local/eventocoursecreation/db" VERSION="20260901" COMMENT="XMLDB file for Moodle local/eventocoursecreation" xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
     <TABLES>
         <TABLE NAME="eventocoursecreation" COMMENT="Defines values for Evento Course Creation">
             <FIELDS>
@@ -26,6 +26,35 @@
             </KEYS>
             <INDEXES>
                 <INDEX NAME="category" UNIQUE="false" FIELDS="category"/>
+            </INDEXES>
+        </TABLE>
+        <TABLE NAME="eventocoursecreation_page" COMMENT="Links a moodle course to its evento module description page">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The moodle course holding the page"/>
+                <FIELD NAME="cmid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="The course module of the page, null while the page is missing"/>
+                <FIELD NAME="anlassnummer" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="The evento event number the description was requested with"/>
+                <FIELD NAME="idmb" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Evento idMB, a change means a different description record"/>
+                <FIELD NAME="idstatus" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Evento idStatus of the imported description"/>
+                <FIELD NAME="mbversionscaled" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Evento mbVersion multiplied by 1000, an exact integer to compare"/>
+                <FIELD NAME="mbgueltigab" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Evento mbGueltigAb as a unix timestamp"/>
+                <FIELD NAME="contenthash" TYPE="char" LENGTH="40" NOTNULL="false" SEQUENCE="false" COMMENT="sha1 of the cleaned content last written by this plugin"/>
+                <FIELD NAME="pagename" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="Page name last written by this plugin"/>
+                <FIELD NAME="status" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="0 ok, 1 page missing, 2 error, 3 disabled"/>
+                <FIELD NAME="errorcount" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Consecutive failures, used to back off"/>
+                <FIELD NAME="lasterror" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Time the page content was last written"/>
+                <FIELD NAME="timechecked" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Time evento was last asked, no matter if something changed"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="courseid" TYPE="foreign-unique" FIELDS="courseid" REFTABLE="course" REFFIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="cmid" UNIQUE="false" FIELDS="cmid"/>
+                <INDEX NAME="anlassnummer" UNIQUE="false" FIELDS="anlassnummer"/>
+                <INDEX NAME="timechecked" UNIQUE="false" FIELDS="timechecked"/>
             </INDEXES>
         </TABLE>
     </TABLES>
