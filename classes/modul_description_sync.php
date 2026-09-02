@@ -48,6 +48,16 @@ class modul_description_sync {
     /** Soap fault codes which mean that the webservice as a whole is unavailable. */
     const STOP_FAULTCODES = array('HTTP', 'soapenv:Server', 'Server');
 
+    /**
+     * Marks in a soap fault which mean that evento simply has no description for this event.
+     *
+     * Evento answers such a request with a fault and not with an empty result, and it uses
+     * the same fault code it uses for a real server problem. Only the message tells the two
+     * apart, so it has to be read. Both marks are looked for, the wording because it is what
+     * evento sends today, and the exception class because it survives a change of wording.
+     */
+    const NODESCRIPTION_MARKS = array('keine modulbeschreibung gefunden', 'dataretrievalexception');
+
     /** @var \progress_trace where the progress is written to. */
     protected $trace;
 
@@ -83,6 +93,23 @@ class modul_description_sync {
      */
     public function is_service_unavailable(): bool {
         return $this->serviceunavailable;
+    }
+
+    /**
+     * Tells whether a soap fault only says that this event has no module description.
+     *
+     * @param string|null $message the fault message of the call
+     * @return bool true if the fault is an answer and not a failure
+     */
+    public static function is_nodescription_fault($message): bool {
+        $message = \core_text::strtolower((string)$message);
+        foreach (self::NODESCRIPTION_MARKS as $mark) {
+            if (strpos($message, $mark) !== false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -169,15 +196,30 @@ class modul_description_sync {
         try {
             $answer = $this->get_service()->get_modulbeschreibung_by_number($anlassnummer);
         } catch (\local_evento_service_exception $ex) {
+            // The faultstring names the real cause, getMessage() is the localised wrapper.
+            $message = $ex->faultstring ?? $ex->getMessage();
+            $cmid = is_null($cm) ? null : (int)$cm->id;
+
+            if (self::is_nodescription_fault($message)) {
+                // An answer and not a failure. Neither the course nor the run may be held
+                // back for it, most modules simply carry no description in evento.
+                $this->note_check($course, $anlassnummer, $cmid,
+                    'evento knows no description for this event number');
+
+                return $this->finish($course, $anlassnummer, modul_description::ACTION_SKIP_NODESCRIPTION,
+                    'evento knows no description for this event number', $cmid);
+            }
+
             if (in_array((string)$ex->faultcode, self::STOP_FAULTCODES, true)) {
                 $this->serviceunavailable = true;
             }
-            // The faultstring names the real cause, getMessage() is the localised wrapper.
-            $message = $ex->faultstring ?? $ex->getMessage();
-            $this->store_failure($course, $anlassnummer, $cm, $message);
+            // The fault code is kept, it is the only way to tell afterwards why a fault was
+            // taken for a dead service.
+            $this->store_failure($course, $anlassnummer, $cm,
+                '[' . ($ex->faultcode ?? '-') . '] ' . $message);
 
             return $this->finish($course, $anlassnummer, modul_description::ACTION_SKIP_NODESCRIPTION,
-                'the webservice call failed: ' . $message, is_null($cm) ? null : $cm->id, false);
+                'the webservice call failed: ' . $message, $cmid, false);
         }
 
         $normalized = \local_evento_evento_service::normalize_modulbeschreibung($answer);

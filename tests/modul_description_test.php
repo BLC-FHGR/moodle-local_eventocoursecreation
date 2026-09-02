@@ -542,6 +542,31 @@ final class modul_description_test extends \advanced_testcase {
     }
 
     /**
+     * A module without a description in evento is an answer and not a broken webservice.
+     */
+    public function test_is_nodescription_fault(): void {
+        $fault = 'EventoHibernateManager -> getEventoModulBeschreibung -> '
+            . 'org.apache.axis2.dataretrieval.DataRetrievalException: Keine Modulbeschreibung gefunden';
+
+        $this->assertTrue(modul_description_sync::is_nodescription_fault($fault));
+        // The wording alone is enough, so is the exception class alone.
+        $this->assertTrue(modul_description_sync::is_nodescription_fault('keine modulbeschreibung gefunden'));
+        $this->assertTrue(modul_description_sync::is_nodescription_fault('DataRetrievalException: nothing'));
+    }
+
+    /**
+     * A real problem of the webservice must not be mistaken for a missing description.
+     */
+    public function test_is_nodescription_fault_keeps_real_failures_apart(): void {
+        $this->assertFalse(modul_description_sync::is_nodescription_fault('Could not connect to host'));
+        $this->assertFalse(modul_description_sync::is_nodescription_fault('Unable to parse URL'));
+        $this->assertFalse(modul_description_sync::is_nodescription_fault(
+            'The endpoint reference (EPR) for the Operation not found is http://example.org/EventoWebservice'));
+        $this->assertFalse(modul_description_sync::is_nodescription_fault(''));
+        $this->assertFalse(modul_description_sync::is_nodescription_fault(null));
+    }
+
+    /**
      * The course idnumber is the first source of the event number.
      */
     public function test_resolve_anlassnummer_from_the_course_idnumber(): void {

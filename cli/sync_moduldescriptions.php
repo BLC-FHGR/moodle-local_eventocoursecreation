@@ -36,7 +36,8 @@ require_once("$CFG->libdir/clilib.php");
 \core\cron::setup_user();
 
 list($options, $unrecognized) = cli_get_params(
-    array('courseid' => false, 'limit' => false, 'list' => false, 'verbose' => false, 'help' => false),
+    array('courseid' => false, 'limit' => false, 'list' => false, 'retry' => false,
+        'verbose' => false, 'help' => false),
     array('v' => 'verbose', 'h' => 'help'));
 
 if ($unrecognized) {
@@ -51,6 +52,7 @@ Options:
 --courseid=ID         Synchronise this single course, ignoring the configured scope
 --limit=N             Process at most N courses, defaults to the configured batch size
 --list                Only show which courses would be processed, change nothing
+--retry                Also take courses which failed before and are still held back
 -v, --verbose         Print progress information
 -h, --help            Print out this help
 
@@ -70,6 +72,12 @@ if (!$settings->enabled) {
 
 $limit = empty($options['limit']) ? null : (int)$options['limit'];
 
+if (!empty($options['retry'])) {
+    // The backoff is a waiting time measured against timechecked, so dropping it to zero
+    // brings the courses held back after a failure into the batch again.
+    $settings->retryhours = 0;
+}
+
 if (!empty($options['list'])) {
     $courses = \local_eventocoursecreation\modul_description::get_sync_candidates($settings, null, $limit);
     cli_writeln(count($courses) . ' course(s) would be processed:');
@@ -80,7 +88,8 @@ if (!empty($options['list'])) {
     exit(0);
 }
 
-$sync = new \local_eventocoursecreation\modul_description_sync($trace);
+// The settings are handed over, so that --retry reaches the candidate query of the run.
+$sync = new \local_eventocoursecreation\modul_description_sync($trace, null, $settings);
 
 try {
     if (!empty($options['courseid'])) {
