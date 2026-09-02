@@ -74,6 +74,18 @@ class modul_description_sync {
     }
 
     /**
+     * Tells whether a call ran into a fault meaning the webservice itself is unavailable.
+     *
+     * The adhoc import uses this to fail on purpose, so the task system retries later
+     * instead of leaving a new course without its description.
+     *
+     * @return bool true if the webservice turned out to be unavailable
+     */
+    public function is_service_unavailable(): bool {
+        return $this->serviceunavailable;
+    }
+
+    /**
      * Returns the webservice wrapper, building it on first use.
      *
      * @return \local_evento_evento_service the wrapper

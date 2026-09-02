@@ -770,6 +770,12 @@ class local_eventocoursecreation_course_creation {
                 $rc->destroy();
             }
 
+            // Queue the module description import. This runs after the template content is
+            // in place, so an outdated page carried over by the template is taken over
+            // instead of being duplicated. The adhoc task keeps the additional webservice
+            // call out of the course creation, where a timeout would do real damage.
+            \local_eventocoursecreation\task\modul_description_course_task::queue_for_course($course->id);
+
         } catch (moodle_exception $ex) {
             if (($ex->errorcode == 'courseidnumbertaken') || ($ex->errorcode == 'shortnametaken')) {
                 // Course already exists not needed to be created.
