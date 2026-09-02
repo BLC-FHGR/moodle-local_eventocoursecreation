@@ -465,6 +465,11 @@ class modul_description {
      * comparison hash. It names the state the imported text is in, which is the only
      * way a reader can tell an outdated description from a current one.
      *
+     * The line has to come out the same on every run, because decide() compares it and
+     * would otherwise write the page again and again. Neither the language nor the time
+     * zone may therefore be taken from whoever happens to run the synchronisation: the
+     * language of the site and the time zone of the server are used instead.
+     *
      * @param \stdClass|null $normalized the normalized evento answer
      * @return string the html of the description, empty when evento names neither value
      */
@@ -473,11 +478,14 @@ class modul_description {
             return '';
         }
 
+        $lang = self::get_intro_language();
         $version = self::format_version($normalized->mbversion ?? null);
         $validfrom = empty($normalized->mbgueltigab)
             ? null
-            : userdate($normalized->mbgueltigab, get_string('moduldescriptiondateformat',
-                'local_eventocoursecreation'));
+            : userdate($normalized->mbgueltigab,
+                get_string_manager()->get_string('moduldescriptiondateformat',
+                    'local_eventocoursecreation', null, $lang),
+                \core_date::get_server_timezone(), false, false);
 
         if (is_null($version) && is_null($validfrom)) {
             return '';
@@ -488,14 +496,33 @@ class modul_description {
         $a->validfrom = $validfrom;
 
         if (is_null($validfrom)) {
-            $text = get_string('moduldescriptionintroversion', 'local_eventocoursecreation', $a);
+            $key = 'moduldescriptionintroversion';
         } else if (is_null($version)) {
-            $text = get_string('moduldescriptionintrovalidfrom', 'local_eventocoursecreation', $a);
+            $key = 'moduldescriptionintrovalidfrom';
         } else {
-            $text = get_string('moduldescriptionintro', 'local_eventocoursecreation', $a);
+            $key = 'moduldescriptionintro';
         }
+        $text = get_string_manager()->get_string($key, 'local_eventocoursecreation', $a, $lang);
 
         return \html_writer::tag('p', s($text), array('class' => self::CLASS_PREFIX . '-meta'));
+    }
+
+    /**
+     * Returns the language the description line is written in.
+     *
+     * The language of the site and not the one of the current user, so that a run from
+     * the command line produces the same line as the scheduled task.
+     *
+     * @return string the language code
+     */
+    public static function get_intro_language(): string {
+        global $CFG;
+
+        // A language code is a directory name, and the string manager falls back to
+        // english on its own when the language pack is not installed.
+        $lang = clean_param((string)($CFG->lang ?? ''), PARAM_SAFEDIR);
+
+        return $lang === '' ? 'en' : $lang;
     }
 
     /**

@@ -544,10 +544,32 @@ final class modul_description_test extends \advanced_testcase {
 
         $this->assertStringContainsString('1.0', $intro);
         $this->assertStringContainsString(userdate($normalized->mbgueltigab,
-            get_string('moduldescriptiondateformat', 'local_eventocoursecreation')), $intro);
+            get_string_manager()->get_string('moduldescriptiondateformat', 'local_eventocoursecreation',
+                null, modul_description::get_intro_language()),
+            \core_date::get_server_timezone(), false, false), $intro);
         // Written twice in a row it has to come out identical, otherwise the comparison
         // in decide() would rewrite the page on every single run.
         $this->assertSame($intro, modul_description::build_intro($this->make_normalized()));
+    }
+
+    /**
+     * Neither the language nor the time zone of the caller may change the line.
+     */
+    public function test_build_intro_does_not_depend_on_the_caller(): void {
+        $this->resetAfterTest();
+
+        $normalized = $this->make_normalized();
+        $expected = modul_description::build_intro($normalized);
+
+        // A run from the command line and the scheduled task can meet different values
+        // here, and a line that differs would make the page be written on every run.
+        $this->setUser($this->getDataGenerator()->create_user(
+            array('lang' => 'en', 'timezone' => 'Pacific/Auckland')));
+        $this->assertSame($expected, modul_description::build_intro($normalized));
+
+        $this->setUser($this->getDataGenerator()->create_user(
+            array('lang' => 'en', 'timezone' => 'America/Anchorage')));
+        $this->assertSame($expected, modul_description::build_intro($normalized));
     }
 
     /**
