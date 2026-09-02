@@ -134,9 +134,16 @@ final class modul_description_test extends \advanced_testcase {
         // Event numbers do contain umlauts.
         $this->assertTrue(modul_description::looks_like_anlassnummer('mod.bök-LEAD2.HS26_BS.001'));
         $this->assertTrue(modul_description::looks_like_anlassnummer('MOD.BSPEA2.HS16_BS.001'));
+        // Evento puts further prefixes of its own on top of the module prefix.
+        $this->assertTrue(modul_description::looks_like_anlassnummer('modk.cds-1092.1.HS26_BS.001'));
+        $this->assertTrue(modul_description::looks_like_anlassnummer('mods.isc-EINF.HS26_BS.001'));
+        $this->assertTrue(modul_description::looks_like_anlassnummer('modh.bau-DIGITEC2.HS26_BS.001'));
+        $this->assertTrue(modul_description::looks_like_anlassnummer('modg.tom-LEAD.HS26_BS.001'));
         $this->assertFalse(modul_description::looks_like_anlassnummer(''));
         $this->assertFalse(modul_description::looks_like_anlassnummer('   '));
         $this->assertFalse(modul_description::looks_like_anlassnummer('mod'));
+        // A bare category name carries the prefix but not the dotted structure.
+        $this->assertFalse(modul_description::looks_like_anlassnummer('modk'));
         $this->assertFalse(modul_description::looks_like_anlassnummer('some-manual-idnumber'));
     }
 

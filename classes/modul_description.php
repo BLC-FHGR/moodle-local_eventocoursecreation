@@ -169,19 +169,25 @@ class modul_description {
      * Checks whether a value looks like an evento event number.
      *
      * Every event number this plugin works with starts with the module prefix of the
-     * category idnumber, for example "mod.boek-LEAD2.HS26_BS.001". Asking the
-     * webservice for anything else only produces empty answers.
+     * category idnumber, for example "mod.bök-LEAD2.HS26_BS.001". The prefix is not
+     * always followed by the separator: evento uses further prefixes of its own on top
+     * of it, modk, mods, modh and modg among them, and the course creation of this
+     * plugin accepts all of them, see get_module_ids() in {@see course_creation}. The
+     * check is deliberately as wide as that one. A value which is no event number after
+     * all costs one webservice call, which answers that it knows no description.
      *
      * @param string $value the value to check
      * @return bool true if the value may be an event number
      */
     public static function looks_like_anlassnummer($value): bool {
         $value = trim((string)$value);
-        if ($value === '') {
+        $prefix = EVENTOCOURSECREATION_IDNUMBER_PREFIX;
+        if ($value === '' || strncasecmp($value, $prefix, strlen($prefix)) !== 0) {
             return false;
         }
 
-        return (bool)preg_match('/^' . preg_quote(EVENTOCOURSECREATION_IDNUMBER_PREFIX, '/') . '\..+/ui', $value);
+        // Every event number carries the dotted structure, a bare category name does not.
+        return strpos($value, '.') !== false;
     }
 
     /**
