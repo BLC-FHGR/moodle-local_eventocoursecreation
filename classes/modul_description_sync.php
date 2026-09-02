@@ -279,6 +279,17 @@ class modul_description_sync {
                 break;
         }
 
+        // Deliberately outside of the switch. The protection has to be checked whenever the
+        // page is there, not only when something was written to it. A role which gained the
+        // right to edit activities after the last write would otherwise never be taken care
+        // of, because a description that does not change is never written again.
+        if (!is_null($cm)) {
+            $written = modul_description_page::protect($cm);
+            if (!empty($written)) {
+                $this->trace->output('  protected the page against ' . implode(', ', $written));
+            }
+        }
+
         return $this->finish($course, $anlassnummer, $decision->action, $decision->reason, $cmid);
     }
 
@@ -296,11 +307,6 @@ class modul_description_sync {
         // Reload, the module info of a freshly written module may be stale.
         $cm = get_fast_modinfo($course->id)->get_cm($cm->id);
         modul_description_page::move_to_top($course, $cm);
-
-        $written = modul_description_page::protect($cm);
-        if (!empty($written)) {
-            $this->trace->output('  protected the page against ' . implode(', ', $written));
-        }
 
         $this->store_record($course, $anlassnummer, (int)$cm->id, $normalized, $contenthash,
             modul_description::ACTION_UPDATE);

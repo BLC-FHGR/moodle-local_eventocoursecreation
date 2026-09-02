@@ -251,8 +251,12 @@ class modul_description_page {
      * as well, course_can_delete_section() asks for moodle/course:manageactivities on
      * the module context of every activity inside the section.
      *
-     * The roles are looked up instead of being configured, so a role added later is
-     * covered as soon as the synchronisation passes by again.
+     * The roles are looked up instead of being configured, and the caller runs this on
+     * every pass over a course and not only when the page was written, so a role which
+     * gained the right to edit activities later is covered by the next synchronisation.
+     *
+     * Nothing is written when the override is already in place, so the repeated call
+     * costs two reads per role and leaves no trace in the log.
      *
      * @param \cm_info $cm the course module of the page
      * @return string[] the capability and role combinations that had to be written
