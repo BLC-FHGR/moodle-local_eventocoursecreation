@@ -315,6 +315,27 @@ class modul_description_sync {
     }
 
     /**
+     * Returns the name the page of a course actually carries.
+     *
+     * The configured name is not the same thing. With the setting to keep a name given by
+     * hand the two differ on purpose, and storing the configured one would say that the
+     * page carries a name it does not carry.
+     *
+     * @param \stdClass $course the course record
+     * @param int|null $cmid the course module of the page
+     * @return string|null the name, or null if the course has no page
+     */
+    protected function page_name(\stdClass $course, $cmid) {
+        if (is_null($cmid)) {
+            return null;
+        }
+
+        $cms = get_fast_modinfo($course->id)->get_cms();
+
+        return isset($cms[$cmid]) ? (string)$cms[$cmid]->name : null;
+    }
+
+    /**
      * Writes the link record of a course.
      *
      * @param \stdClass $course the course record
@@ -341,7 +362,7 @@ class modul_description_sync {
         $record->mbversionscaled = $normalized->mbversionscaled;
         $record->mbgueltigab = $normalized->mbgueltigab;
         $record->contenthash = $contenthash;
-        $record->pagename = $this->settings->pagename;
+        $record->pagename = $this->page_name($course, $cmid);
         $record->status = EVENTOCOURSECREATION_MB_STATUS_OK;
         $record->errorcount = 0;
         $record->lasterror = null;
@@ -391,6 +412,7 @@ class modul_description_sync {
         $record->courseid = $course->id;
         $record->anlassnummer = $anlassnummer;
         $record->cmid = $cmid;
+        $record->pagename = $this->page_name($course, $cmid);
         $record->status = modul_description::status_for_action($action, $cmid);
         $record->errorcount = 0;
         $record->lasterror = is_null($note) ? null : \core_text::substr($note, 0, 1000);

@@ -242,6 +242,9 @@ if (is_null($record)) {
         $states[$record->status] ?? ('unknown (' . $record->status . ')'));
     local_eventocoursecreation_diag_line('stored event number', (string)$record->anlassnummer);
     local_eventocoursecreation_diag_line('stored cmid', is_null($record->cmid) ? 'none' : (string)$record->cmid);
+    local_eventocoursecreation_diag_line('stored page name',
+        is_null($record->pagename) ? 'none' : $record->pagename
+            . ($record->pagename === $settings->pagename ? '' : ', renamed by hand'));
     local_eventocoursecreation_diag_line('idMB / idStatus',
         ($record->idmb ?? '-') . ' / ' . ($record->idstatus ?? '-'));
     local_eventocoursecreation_diag_line('version scaled', (string)($record->mbversionscaled ?? '-'));
