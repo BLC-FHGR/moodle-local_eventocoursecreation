@@ -369,6 +369,97 @@ final class modul_description_test extends \advanced_testcase {
     }
 
     /**
+     * A stale description line is written back, even when text and metadata match.
+     */
+    public function test_decide_refreshes_an_outdated_description_line(): void {
+        $record = $this->make_record();
+        $normalized = $this->make_normalized();
+
+        $result = modul_description::decide($record, $normalized, $record->contenthash, $record->contenthash,
+            $this->make_settings(), null, '<p>Version 0.9</p>', '<p>Version 1.0</p>');
+
+        $this->assertSame(modul_description::ACTION_UPDATE, $result->action);
+        $this->assertStringContainsString('description line', $result->reason);
+    }
+
+    /**
+     * A description line which only differs in whitespace is not a change.
+     */
+    public function test_decide_ignores_cosmetic_differences_in_the_description_line(): void {
+        $record = $this->make_record();
+        $normalized = $this->make_normalized();
+
+        $result = modul_description::decide($record, $normalized, $record->contenthash, $record->contenthash,
+            $this->make_settings(), null, "<p>  Version 1.0 </p>\n", '<p>Version 1.0</p>');
+
+        $this->assertSame(modul_description::ACTION_NONE, $result->action);
+    }
+
+    /**
+     * A new version reaches the page, because the line names the version.
+     */
+    public function test_decide_writes_the_page_when_only_the_version_changed(): void {
+        $record = $this->make_record();
+        $normalized = $this->make_normalized(array('mbversionscaled' => 1100, 'mbversion' => 1.1));
+
+        $result = modul_description::decide($record, $normalized, $record->contenthash, $record->contenthash,
+            $this->make_settings(), null, modul_description::build_intro($this->make_normalized()),
+            modul_description::build_intro($normalized));
+
+        $this->assertSame(modul_description::ACTION_UPDATE, $result->action);
+    }
+
+    /**
+     * The version keeps one decimal place, so version 1 does not read as a bare 1.
+     */
+    public function test_format_version(): void {
+        $this->assertSame('1.0', modul_description::format_version(1.0));
+        $this->assertSame('1.5', modul_description::format_version(1.5));
+        $this->assertSame('1.25', modul_description::format_version(1.25));
+        $this->assertSame('12.0', modul_description::format_version('12.000'));
+        $this->assertNull(modul_description::format_version(null));
+        $this->assertNull(modul_description::format_version(''));
+    }
+
+    /**
+     * The description line names the version and the validity and is reproducible.
+     */
+    public function test_build_intro(): void {
+        $normalized = $this->make_normalized();
+        $intro = modul_description::build_intro($normalized);
+
+        $this->assertStringContainsString('1.0', $intro);
+        $this->assertStringContainsString(userdate($normalized->mbgueltigab,
+            get_string('moduldescriptiondateformat', 'local_eventocoursecreation')), $intro);
+        // Written twice in a row it has to come out identical, otherwise the comparison
+        // in decide() would rewrite the page on every single run.
+        $this->assertSame($intro, modul_description::build_intro($this->make_normalized()));
+    }
+
+    /**
+     * Without a version and without a validity there is nothing to show.
+     */
+    public function test_build_intro_without_any_metadata(): void {
+        $normalized = $this->make_normalized(array('mbversion' => null, 'mbgueltigab' => null));
+
+        $this->assertSame('', modul_description::build_intro($normalized));
+        $this->assertSame('', modul_description::build_intro(null));
+    }
+
+    /**
+     * One missing value still leaves a usable line.
+     */
+    public function test_build_intro_with_only_one_value(): void {
+        $onlyversion = modul_description::build_intro($this->make_normalized(array('mbgueltigab' => null)));
+        $onlyvalidity = modul_description::build_intro($this->make_normalized(array('mbversion' => null)));
+
+        $this->assertStringContainsString('1.0', $onlyversion);
+        $this->assertNotSame('', $onlyvalidity);
+        // The date carries digits and dots of its own, so the wording is the safer check.
+        $this->assertStringNotContainsStringIgnoringCase('version', $onlyvalidity);
+    }
+
+    /**
      * A step backwards in evento does not overwrite a newer imported state.
      */
     public function test_decide_refuses_an_older_state(): void {

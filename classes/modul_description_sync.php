@@ -184,7 +184,13 @@ class modul_description_sync {
         $content = is_null($normalized) ? '' : modul_description::clean_content($normalized->mbtext);
         $newhash = modul_description::content_hash($content);
 
-        $decision = modul_description::decide($record, $normalized, $newhash, $currenthash, $this->settings);
+        // The description line is not part of the content and therefore not part of the hash.
+        // It is compared separately, so that a page whose line went stale is brought back.
+        $newintro = modul_description::build_intro($normalized);
+        $currentintro = is_null($cm) ? null : modul_description::get_page_intro($cm);
+
+        $decision = modul_description::decide($record, $normalized, $newhash, $currenthash, $this->settings,
+            null, $currentintro, $newintro);
         $cmid = is_null($cm) ? null : (int)$cm->id;
 
         switch ($decision->action) {
@@ -193,7 +199,8 @@ class modul_description_sync {
                     // There used to be a page, so it was deleted by hand. Respect the configuration.
                     return $this->handle_deleted_page($course, $anlassnummer);
                 }
-                $cm = modul_description_page::create($course, $this->settings->pagename, $content, $this->settings);
+                $cm = modul_description_page::create($course, $this->settings->pagename, $content,
+                    $this->settings, $newintro);
                 $cmid = (int)$cm->id;
                 $this->after_write($course, $cm, $normalized, $newhash, $anlassnummer);
                 break;
@@ -201,7 +208,7 @@ class modul_description_sync {
             case modul_description::ACTION_UPDATE:
                 $name = $this->settings->onrename === EVENTOCOURSECREATION_MB_ONRENAME_RESET
                     ? $this->settings->pagename : null;
-                $cm = modul_description_page::update($course, $cm, $name, $content, $this->settings);
+                $cm = modul_description_page::update($course, $cm, $name, $content, $this->settings, $newintro);
                 $cmid = (int)$cm->id;
                 $this->after_write($course, $cm, $normalized, $newhash, $anlassnummer);
                 break;

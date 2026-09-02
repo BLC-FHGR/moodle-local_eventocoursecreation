@@ -65,10 +65,11 @@ class modul_description_page {
      * @param string $name the name of the page
      * @param string $content the cleaned html content
      * @param \stdClass $settings the settings as returned by {@see modul_description::get_settings()}
+     * @param string $intro the description line, as built by {@see modul_description::build_intro()}
      * @return \cm_info the created course module
      * @throws \moodle_exception if the page module is not available in this course
      */
-    public static function create(\stdClass $course, $name, $content, \stdClass $settings): \cm_info {
+    public static function create(\stdClass $course, $name, $content, \stdClass $settings, $intro = ''): \cm_info {
         global $DB;
 
         // Deliberately not course_allowed_module(). That function ends in a capability
@@ -91,7 +92,7 @@ class modul_description_page {
         // The page is placed in front of everything else that is already in the section.
         $moduleinfo->beforemod = self::get_first_cmid_in_section($course);
 
-        self::apply_page_fields($moduleinfo, $content, $settings);
+        self::apply_page_fields($moduleinfo, $content, $settings, (string)$intro);
 
         // add_moduleinfo() writes course_modules, the page record and the section
         // sequence, rebuilds the course cache and triggers course_module_created.
@@ -108,9 +109,11 @@ class modul_description_page {
      * @param string|null $name the new name, null keeps the current one
      * @param string|null $content the new cleaned html content, null keeps the current one
      * @param \stdClass $settings the settings as returned by {@see modul_description::get_settings()}
+     * @param string|null $intro the new description line, null keeps the current one
      * @return \cm_info the updated course module
      */
-    public static function update(\stdClass $course, \cm_info $cm, $name, $content, \stdClass $settings): \cm_info {
+    public static function update(\stdClass $course, \cm_info $cm, $name, $content, \stdClass $settings,
+            $intro = null): \cm_info {
         global $DB;
 
         $page = $DB->get_record('page', array('id' => $cm->instance), '*', MUST_EXIST);
@@ -131,7 +134,8 @@ class modul_description_page {
         $moduleinfo->revision = (int)$page->revision;
 
         self::apply_page_fields($moduleinfo, is_null($content) ? $page->content : $content, $settings,
-            (string)$page->intro, (int)$page->introformat);
+            is_null($intro) ? (string)$page->intro : (string)$intro,
+            is_null($intro) ? (int)$page->introformat : FORMAT_HTML);
 
         // update_moduleinfo() rebuilds the course cache and triggers course_module_updated.
         update_moduleinfo($cmrecord, $moduleinfo, $course, null);
@@ -177,7 +181,13 @@ class modul_description_page {
         );
 
         $moduleinfo->display = self::sanitise_display($settings->display);
-        $moduleinfo->printintro = 0;
+        // The description carries the evento version and the validity, so it is shown above
+        // the text. An empty description would otherwise print an empty box, see
+        // mod/page/view.php, which is why the switch follows the text and not the setting.
+        $moduleinfo->printintro = trim(strip_tags((string)$intro)) === '' ? 0 : 1;
+        // add_moduleinfo() and update_moduleinfo() fall back to 0 when the field is missing,
+        // so leaving it out would silently reset it on every write.
+        $moduleinfo->showdescription = 0;
         $moduleinfo->printlastmodified = empty($settings->printlastmodified) ? 0 : 1;
     }
 

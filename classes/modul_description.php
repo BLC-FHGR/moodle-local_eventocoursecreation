@@ -366,6 +366,83 @@ class modul_description {
     }
 
     /**
+     * Turns the evento version into something readable.
+     *
+     * The webservice delivers a float, which normalize_modulbeschreibung() formats with
+     * three decimal places. Trailing zeros are dropped again here, but one decimal place
+     * is kept, so that version 1 reads as 1.0 and not as a plain 1.
+     *
+     * @param float|string|null $value the version as evento delivers it
+     * @return string|null the version to show, or null if there is none
+     */
+    public static function format_version($value): ?string {
+        if (is_null($value) || $value === '' || !is_numeric($value)) {
+            return null;
+        }
+
+        $version = rtrim(rtrim(sprintf('%.3F', (float)$value), '0'), '.');
+        if (strpos($version, '.') === false) {
+            $version .= '.0';
+        }
+
+        return $version;
+    }
+
+    /**
+     * Builds the description line shown above the content of the page.
+     *
+     * The line is deliberately not part of the content and therefore not part of the
+     * comparison hash. It names the state the imported text is in, which is the only
+     * way a reader can tell an outdated description from a current one.
+     *
+     * @param \stdClass|null $normalized the normalized evento answer
+     * @return string the html of the description, empty when evento names neither value
+     */
+    public static function build_intro($normalized): string {
+        if (!is_object($normalized)) {
+            return '';
+        }
+
+        $version = self::format_version($normalized->mbversion ?? null);
+        $validfrom = empty($normalized->mbgueltigab)
+            ? null
+            : userdate($normalized->mbgueltigab, get_string('moduldescriptiondateformat',
+                'local_eventocoursecreation'));
+
+        if (is_null($version) && is_null($validfrom)) {
+            return '';
+        }
+
+        $a = new \stdClass();
+        $a->version = $version;
+        $a->validfrom = $validfrom;
+
+        if (is_null($validfrom)) {
+            $text = get_string('moduldescriptionintroversion', 'local_eventocoursecreation', $a);
+        } else if (is_null($version)) {
+            $text = get_string('moduldescriptionintrovalidfrom', 'local_eventocoursecreation', $a);
+        } else {
+            $text = get_string('moduldescriptionintro', 'local_eventocoursecreation', $a);
+        }
+
+        return \html_writer::tag('p', s($text), array('class' => self::CLASS_PREFIX . '-meta'));
+    }
+
+    /**
+     * Reads the stored description of a page.
+     *
+     * @param \cm_info|\stdClass $cm the course module of the page
+     * @return string|null the description or null if the instance is gone
+     */
+    public static function get_page_intro($cm): ?string {
+        global $DB;
+
+        $intro = $DB->get_field('page', 'intro', array('id' => $cm->instance));
+
+        return $intro === false ? null : (string)$intro;
+    }
+
+    /**
      * Decides what has to happen for one course.
      *
      * The order of the checks matters. A description which must not be imported at all
@@ -379,9 +456,12 @@ class modul_description {
      * @param string|null $currenthash hash of the content of the existing page, null if there is no page
      * @param \stdClass $settings the settings as returned by {@see self::get_settings()}
      * @param int|null $now the time to compare the validity against, defaults to the current time
+     * @param string|null $currentintro the description of the existing page, null skips the check
+     * @param string|null $newintro the description the page should carry, null skips the check
      * @return \stdClass object with the properties action and reason
      */
-    public static function decide($record, $normalized, $newhash, $currenthash, \stdClass $settings, $now = null): \stdClass {
+    public static function decide($record, $normalized, $newhash, $currenthash, \stdClass $settings, $now = null,
+            $currentintro = null, $newintro = null): \stdClass {
         $now = is_null($now) ? time() : (int)$now;
 
         if (!is_object($normalized)) {
@@ -418,6 +498,13 @@ class modul_description {
         }
         if ($newhash !== $record->contenthash) {
             return self::action(self::ACTION_UPDATE, 'the description changed in evento');
+        }
+        // Checked before the metadata, because version and validity are what the line shows.
+        // Every metadata change that is visible to a reader is therefore written to the page
+        // instead of only being noted in the link record.
+        if (!is_null($newintro)
+                && self::normalize_content($currentintro) !== self::normalize_content($newintro)) {
+            return self::action(self::ACTION_UPDATE, 'the description line is out of date');
         }
         if (self::metadata_differs($record, $normalized)) {
             // The content is identical, so the page is left alone and only the link record moves on.

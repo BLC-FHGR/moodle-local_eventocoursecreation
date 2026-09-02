@@ -146,6 +146,8 @@ if (is_null($anlassnummer)) {
 $converted = \local_eventocoursecreation\modul_description::convert_structure($raw);
 $cleaned = \local_eventocoursecreation\modul_description::clean_content($raw);
 $hash = \local_eventocoursecreation\modul_description::content_hash($cleaned);
+// The built in sample carries no evento metadata, so the description stays empty there.
+$intro = \local_eventocoursecreation\modul_description::build_intro($normalized ?? null);
 
 if (!empty($options['raw'])) {
     cli_writeln('');
@@ -156,6 +158,10 @@ if (!empty($options['raw'])) {
     cli_writeln('== After the structure has been rewritten (' . strlen($converted) . ' bytes) ==');
     cli_writeln($converted);
 }
+
+cli_writeln('');
+cli_writeln('== The description shown above the content ==');
+cli_writeln('  ' . ($intro === '' ? 'none, evento names neither a version nor a validity' : $intro));
 
 cli_writeln('');
 cli_writeln('== This is what the page would hold (' . strlen($cleaned) . ' bytes) ==');
