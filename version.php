@@ -30,5 +30,7 @@ $plugin->component = 'local_eventocoursecreation';
 $plugin->maturity  = MATURITY_STABLE;
 $plugin->release   = "2.2.0"; // User-friendly version number.
 $plugin->dependencies = array(
-    'local_evento' => 2018072600
+    // The module description import calls getEventoModulBeschreibung, which local_evento
+    // offers from this version onwards.
+    'local_evento' => 2026090100
 );
