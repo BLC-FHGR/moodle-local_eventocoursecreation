@@ -724,6 +724,29 @@ class modul_description {
     }
 
     /**
+     * Tells whether this plugin ever put a page into a course.
+     *
+     * A link record alone does not say so. One is written for every course that has been
+     * looked at, including the many courses evento has no description for, and those
+     * carry no page and never did. Only a course which did have a page can have lost it
+     * by hand, which is the case the configuration for a deleted page is about.
+     *
+     * The two marks are the stored course module and the time of the last write. The
+     * first one is dropped again when a deleted page is not created again, the second one
+     * stays, so together they still name the course afterwards.
+     *
+     * @param \stdClass|null $record the link record of the course
+     * @return bool true if the course did have a page written by this plugin
+     */
+    public static function had_a_page($record): bool {
+        if (!is_object($record)) {
+            return false;
+        }
+
+        return !is_null($record->cmid ?? null) || (int)($record->timemodified ?? 0) > 0;
+    }
+
+    /**
      * Reads the link record of a course.
      *
      * @param int $courseid the course

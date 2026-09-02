@@ -243,7 +243,8 @@ class modul_description_sync {
 
         switch ($decision->action) {
             case modul_description::ACTION_CREATE:
-                if (!is_null($record) && $this->settings->ondelete !== EVENTOCOURSECREATION_MB_ONDELETE_RECREATE) {
+                if (modul_description::had_a_page($record)
+                        && $this->settings->ondelete !== EVENTOCOURSECREATION_MB_ONDELETE_RECREATE) {
                     // There used to be a page, so it was deleted by hand. Respect the configuration.
                     return $this->handle_deleted_page($course, $anlassnummer);
                 }

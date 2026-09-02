@@ -574,6 +574,23 @@ final class modul_description_test extends \advanced_testcase {
     }
 
     /**
+     * A link record alone is no proof that the course ever had a page.
+     */
+    public function test_had_a_page(): void {
+        // Written by note_check() for a course evento has no description for.
+        $neverhadone = $this->make_record(array('cmid' => null, 'timemodified' => 0));
+        // The page was written and is still there.
+        $haspage = $this->make_record(array('cmid' => 4711, 'timemodified' => 1789336800));
+        // The page was written, deleted by hand, and the cmid dropped afterwards.
+        $lostit = $this->make_record(array('cmid' => null, 'timemodified' => 1789336800));
+
+        $this->assertFalse(modul_description::had_a_page($neverhadone));
+        $this->assertFalse(modul_description::had_a_page(null));
+        $this->assertTrue(modul_description::had_a_page($haspage));
+        $this->assertTrue(modul_description::had_a_page($lostit));
+    }
+
+    /**
      * A step backwards in evento does not overwrite a newer imported state.
      */
     public function test_decide_refuses_an_older_state(): void {
