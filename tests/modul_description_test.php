@@ -178,6 +178,62 @@ final class modul_description_test extends \advanced_testcase {
     }
 
     /**
+     * Evento delivers rich text fields entity encoded, the tags must not stay visible.
+     */
+    public function test_convert_structure_unpacks_an_escaped_field(): void {
+        $html = '<dl><dt>Leitidee</dt><dd data-field="leitidee">'
+            . '&lt;p&gt;&lt;strong&gt;Erste Zeile&lt;/strong&gt;&lt;/p&gt;'
+            . '&lt;ol&gt;&lt;li&gt;Punkt&lt;/li&gt;&lt;/ol&gt;</dd></dl>';
+
+        $result = modul_description::convert_structure($html);
+
+        $this->assertStringContainsString('<strong>Erste Zeile</strong>', $result);
+        $this->assertStringContainsString('<li>Punkt</li>', $result);
+        $this->assertStringNotContainsString('&lt;p&gt;', $result);
+    }
+
+    /**
+     * The double encoding evento produces in a link has to resolve to a usable url.
+     */
+    public function test_convert_structure_unpacks_a_double_encoded_link(): void {
+        $html = '<dd data-field="literatur">&lt;p&gt;&lt;a href="https://example.org/?a=1&amp;amp;b=2"&gt;'
+            . 'Link&lt;/a&gt;&lt;/p&gt;</dd>';
+
+        $result = modul_description::convert_structure($html);
+
+        $this->assertStringContainsString('href="https://example.org/?a=1&amp;b=2"', $result);
+        $this->assertStringNotContainsString('&amp;amp;', $result);
+    }
+
+    /**
+     * A field holding a plain value stays exactly as it is.
+     */
+    public function test_convert_structure_leaves_a_plain_field_alone(): void {
+        $plain = modul_description::convert_structure('<dd data-field="hilfsmittel">keine</dd>');
+        // A lone comparison sign is text and not the start of a tag.
+        $sign = modul_description::convert_structure('<dd data-field="note">Note &lt; 4</dd>');
+
+        $this->assertStringContainsString('>keine<', $plain);
+        $this->assertStringContainsString('Note &lt; 4', $sign);
+    }
+
+    /**
+     * Markup unpacked out of a field is purified like the rest of the description.
+     */
+    public function test_clean_content_purifies_an_unpacked_field(): void {
+        $html = '<dd data-field="leitidee">&lt;p&gt;Text&lt;/p&gt;'
+            . '&lt;script&gt;alert(1)&lt;/script&gt;'
+            . '&lt;a href="javascript:alert(2)"&gt;boese&lt;/a&gt;</dd>';
+
+        $result = modul_description::clean_content($html);
+
+        $this->assertStringContainsString('<p>Text</p>', $result);
+        $this->assertStringNotContainsString('<script', $result);
+        $this->assertStringNotContainsString('alert(1)', $result);
+        $this->assertStringNotContainsString('javascript:', $result);
+    }
+
+    /**
      * Cleaning removes what is dangerous and keeps what carries the description.
      */
     public function test_clean_content_removes_scripts_and_keeps_the_structure(): void {

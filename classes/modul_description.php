@@ -222,6 +222,12 @@ class modul_description {
             return $html;
         }
 
+        // Runs first, so that the markup unpacked here is rewritten by the passes below
+        // like the rest of the document.
+        foreach ($xpath->query('.//*[@data-field]', $root) as $element) {
+            self::unpack_escaped_field($doc, $element);
+        }
+
         // The node list of a xpath query is static, so the tree may be changed while iterating.
         foreach ($xpath->query('.//*', $root) as $element) {
             self::attributes_to_classes($element);
@@ -236,6 +242,64 @@ class modul_description {
         }
 
         return $result;
+    }
+
+    /**
+     * Turns the escaped markup of a rich text field back into real elements.
+     *
+     * Evento embeds the value of a rich text field entity encoded into the surrounding
+     * document, so a field holds the characters &lt;p&gt; and not a paragraph. Left alone
+     * the reader sees the tags as text. The unpacked markup is purified afterwards like
+     * everything else, so nothing unsafe can enter the course through this.
+     *
+     * Only a field which holds nothing but text is looked at, and only when that text
+     * starts with a tag and closes one again. A field carrying a single character like a
+     * comparison sign is therefore left untouched.
+     *
+     * @param \DOMDocument $doc the document the element belongs to
+     * @param \DOMElement $element the field element, changed in place
+     * @return bool true if the field had to be unpacked
+     */
+    protected static function unpack_escaped_field(\DOMDocument $doc, \DOMElement $element): bool {
+        foreach ($element->childNodes as $child) {
+            if ($child->nodeType !== XML_TEXT_NODE && $child->nodeType !== XML_CDATA_SECTION_NODE) {
+                // The field already carries real elements, there is nothing encoded here.
+                return false;
+            }
+        }
+
+        $text = $element->textContent;
+        if (!preg_match('/^\s*<[a-z][a-z0-9]*(\s[^>]*)?>/i', $text) || !preg_match('/<\/[a-z][a-z0-9]*>/i', $text)) {
+            return false;
+        }
+
+        $previous = libxml_use_internal_errors(true);
+        $inner = new \DOMDocument('1.0', 'UTF-8');
+        $wrapped = '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">'
+            . '<div id="' . self::DOM_ROOT_ID . '">' . $text . '</div>';
+        $loaded = $inner->loadHTML($wrapped, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        if (!$loaded) {
+            return false;
+        }
+
+        $innerroot = (new \DOMXPath($inner))->query('//div[@id="' . self::DOM_ROOT_ID . '"]')->item(0);
+        if (is_null($innerroot)) {
+            return false;
+        }
+
+        while ($element->firstChild) {
+            $element->removeChild($element->firstChild);
+        }
+        // Copied out of the node list first, appendChild() moves the nodes and would
+        // otherwise change the list while it is being walked.
+        foreach (iterator_to_array($innerroot->childNodes) as $child) {
+            $element->appendChild($doc->importNode($child, true));
+        }
+
+        return true;
     }
 
     /**
