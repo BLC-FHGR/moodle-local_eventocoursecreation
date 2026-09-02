@@ -64,6 +64,8 @@ class modul_description {
     const ACTION_SKIP_EMPTY = 'skipempty';
     /** Evento offers an older state than the one already imported. */
     const ACTION_SKIP_OLDER = 'skipolder';
+    /** The page was deleted by hand and the configuration says not to bring it back. */
+    const ACTION_SKIP_DELETED = 'skipdeleted';
 
     /** Prefix of every css class this plugin generates out of the evento markup. */
     const CLASS_PREFIX = 'eventomb';
@@ -395,8 +397,13 @@ class modul_description {
             // Never overwrite a description with nothing, an empty answer is a fault, not a change.
             return self::action(self::ACTION_SKIP_EMPTY, 'the description is empty after cleaning');
         }
-        if (!is_object($record) || is_null($currenthash)) {
+        if (is_null($currenthash)) {
             return self::action(self::ACTION_CREATE, 'there is no page yet');
+        }
+        if (!is_object($record)) {
+            // A page carried over by a course template, or one this plugin lost track of.
+            // Taking it over avoids a second page next to the one that is already there.
+            return self::action(self::ACTION_UPDATE, 'an untracked page is taken over');
         }
 
         // A different description record replaces the old one, no matter which version it carries.

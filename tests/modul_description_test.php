@@ -307,6 +307,17 @@ final class modul_description_test extends \advanced_testcase {
     }
 
     /**
+     * A page carried over by a course template is taken over instead of duplicated.
+     */
+    public function test_decide_takes_over_an_untracked_page(): void {
+        $result = modul_description::decide(null, $this->make_normalized(), sha1('new'), sha1('from the template'),
+            $this->make_settings());
+
+        $this->assertSame(modul_description::ACTION_UPDATE, $result->action);
+        $this->assertStringContainsString('taken over', $result->reason);
+    }
+
+    /**
      * Running twice without a change in evento writes nothing.
      */
     public function test_decide_is_idempotent(): void {
