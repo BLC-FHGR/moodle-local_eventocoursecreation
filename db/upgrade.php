@@ -63,5 +63,46 @@ function xmldb_local_eventocoursecreation_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2023121800, 'local', 'eventocoursecreation');
     }
 
+    if ($oldversion < 2026090100) {
+
+        // Define table eventocoursecreation_page to be created.
+        $table = new xmldb_table('eventocoursecreation_page');
+
+        // Adding fields to table eventocoursecreation_page.
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('cmid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('anlassnummer', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('idmb', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('idstatus', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('mbversionscaled', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('mbgueltigab', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('contenthash', XMLDB_TYPE_CHAR, '40', null, null, null, null);
+        $table->add_field('pagename', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+        $table->add_field('status', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('errorcount', XMLDB_TYPE_INTEGER, '4', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('lasterror', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timechecked', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+        // Adding keys to table eventocoursecreation_page.
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('courseid', XMLDB_KEY_FOREIGN_UNIQUE, ['courseid'], 'course', ['id']);
+
+        // Adding indexes to table eventocoursecreation_page.
+        $table->add_index('cmid', XMLDB_INDEX_NOTUNIQUE, ['cmid']);
+        $table->add_index('anlassnummer', XMLDB_INDEX_NOTUNIQUE, ['anlassnummer']);
+        $table->add_index('timechecked', XMLDB_INDEX_NOTUNIQUE, ['timechecked']);
+
+        // Conditionally launch create table for eventocoursecreation_page.
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        // Eventocoursecreation savepoint reached.
+        upgrade_plugin_savepoint(true, 2026090100, 'local', 'eventocoursecreation');
+    }
+
     return true;
 }

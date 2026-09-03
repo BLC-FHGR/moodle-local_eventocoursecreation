@@ -137,4 +137,91 @@ if ($hassiteconfig) {
     $settings->add(new admin_setting_configcheckbox('local_eventocoursecreation/execonlyonstarttimeautumnterm',
                     new lang_string('execonlyonstarttimeautumnterm', 'local_eventocoursecreation'),
                     new lang_string('execonlyonstarttimeautumnterm_help', 'local_eventocoursecreation'), 1));
+
+    // Module description (Modulbeschreibung).
+    require_once($CFG->libdir . '/resourcelib.php');
+
+    $settings->add(new admin_setting_heading('moduldescriptionsettings',
+                    get_string('moduldescriptionsettings', 'local_eventocoursecreation'),
+                    get_string('moduldescriptionsettings_help', 'local_eventocoursecreation')));
+
+    $settings->add(new admin_setting_configcheckbox('local_eventocoursecreation/enablemoduldescription',
+                    new lang_string('enablemoduldescription', 'local_eventocoursecreation'),
+                    new lang_string('enablemoduldescription_help', 'local_eventocoursecreation'), 0));
+
+    $scopes = array(
+        EVENTOCOURSECREATION_MB_SCOPE_CURRENT => get_string('moduldescriptionscopecurrent', 'local_eventocoursecreation'),
+        EVENTOCOURSECREATION_MB_SCOPE_FUTURE => get_string('moduldescriptionscopefuture', 'local_eventocoursecreation'),
+    );
+    $settings->add(new admin_setting_configselect('local_eventocoursecreation/moduldescriptionscope',
+                    get_string('moduldescriptionscope', 'local_eventocoursecreation'),
+                    get_string('moduldescriptionscope_help', 'local_eventocoursecreation'),
+                    EVENTOCOURSECREATION_MB_SCOPE_CURRENT, $scopes));
+
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/moduldescriptionpagename',
+                    get_string('moduldescriptionpagename', 'local_eventocoursecreation'),
+                    get_string('moduldescriptionpagename_help', 'local_eventocoursecreation'),
+                    EVENTOCOURSECREATION_MB_PAGENAME, PARAM_TEXT));
+
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/moduldescriptionheading',
+                    get_string('moduldescriptionheading', 'local_eventocoursecreation'),
+                    get_string('moduldescriptionheading_help', 'local_eventocoursecreation'),
+                    EVENTOCOURSECREATION_MB_HEADING, PARAM_TEXT));
+
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/moduldescriptioncmidnumber',
+                    get_string('moduldescriptioncmidnumber', 'local_eventocoursecreation'),
+                    get_string('moduldescriptioncmidnumber_help', 'local_eventocoursecreation'),
+                    EVENTOCOURSECREATION_MB_CMIDNUMBER, PARAM_TEXT));
+
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/moduldescriptionallowedstatus',
+                    get_string('moduldescriptionallowedstatus', 'local_eventocoursecreation'),
+                    get_string('moduldescriptionallowedstatus_help', 'local_eventocoursecreation'),
+                    EVENTOCOURSECREATION_MB_ALLOWEDSTATUS, PARAM_TEXT));
+
+    $settings->add(new admin_setting_configcheckbox('local_eventocoursecreation/moduldescriptionfuturevalid',
+                    new lang_string('moduldescriptionfuturevalid', 'local_eventocoursecreation'),
+                    new lang_string('moduldescriptionfuturevalid_help', 'local_eventocoursecreation'), 1));
+
+    $displayoptions = array(
+        RESOURCELIB_DISPLAY_AUTO => get_string('moduldescriptiondisplayauto', 'local_eventocoursecreation'),
+        RESOURCELIB_DISPLAY_EMBED => get_string('moduldescriptiondisplayembed', 'local_eventocoursecreation'),
+        RESOURCELIB_DISPLAY_OPEN => get_string('moduldescriptiondisplayopen', 'local_eventocoursecreation'),
+    );
+    $settings->add(new admin_setting_configselect('local_eventocoursecreation/moduldescriptiondisplay',
+                    get_string('moduldescriptiondisplay', 'local_eventocoursecreation'),
+                    get_string('moduldescriptiondisplay_help', 'local_eventocoursecreation'),
+                    RESOURCELIB_DISPLAY_AUTO, $displayoptions));
+
+    $settings->add(new admin_setting_configcheckbox('local_eventocoursecreation/moduldescriptionprintlastmodified',
+                    new lang_string('moduldescriptionprintlastmodified', 'local_eventocoursecreation'),
+                    new lang_string('moduldescriptionprintlastmodified_help', 'local_eventocoursecreation'), 1));
+
+    $ondeleteoptions = array(
+        EVENTOCOURSECREATION_MB_ONDELETE_RECREATE => get_string('moduldescriptionondeleterecreate', 'local_eventocoursecreation'),
+        EVENTOCOURSECREATION_MB_ONDELETE_IGNORE => get_string('moduldescriptionondeleteignore', 'local_eventocoursecreation'),
+        EVENTOCOURSECREATION_MB_ONDELETE_DISABLE => get_string('moduldescriptionondeletedisable', 'local_eventocoursecreation'),
+    );
+    $settings->add(new admin_setting_configselect('local_eventocoursecreation/moduldescriptionondelete',
+                    get_string('moduldescriptionondelete', 'local_eventocoursecreation'),
+                    get_string('moduldescriptionondelete_help', 'local_eventocoursecreation'),
+                    EVENTOCOURSECREATION_MB_ONDELETE_RECREATE, $ondeleteoptions));
+
+    $onrenameoptions = array(
+        EVENTOCOURSECREATION_MB_ONRENAME_RESET => get_string('moduldescriptiononrenamereset', 'local_eventocoursecreation'),
+        EVENTOCOURSECREATION_MB_ONRENAME_KEEP => get_string('moduldescriptiononrenamekeep', 'local_eventocoursecreation'),
+    );
+    $settings->add(new admin_setting_configselect('local_eventocoursecreation/moduldescriptiononrename',
+                    get_string('moduldescriptiononrename', 'local_eventocoursecreation'),
+                    get_string('moduldescriptiononrename_help', 'local_eventocoursecreation'),
+                    EVENTOCOURSECREATION_MB_ONRENAME_RESET, $onrenameoptions));
+
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/moduldescriptionbatchsize',
+                    get_string('moduldescriptionbatchsize', 'local_eventocoursecreation'),
+                    get_string('moduldescriptionbatchsize_help', 'local_eventocoursecreation'),
+                    EVENTOCOURSECREATION_MB_BATCHSIZE, PARAM_INT));
+
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/moduldescriptionretryhours',
+                    get_string('moduldescriptionretryhours', 'local_eventocoursecreation'),
+                    get_string('moduldescriptionretryhours_help', 'local_eventocoursecreation'),
+                    EVENTOCOURSECREATION_MB_RETRYHOURS, PARAM_INT));
 }

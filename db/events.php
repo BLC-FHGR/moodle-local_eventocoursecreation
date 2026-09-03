@@ -15,33 +15,22 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Definition of Evento enrolment scheduled tasks.
+ * Event observers of the Evento course creation plugin.
  *
  * @package    local_eventocoursecreation
- * @copyright  2017 HTW Chur Roger Barras
+ * @copyright  2026 FH Graubuenden
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+
 defined('MOODLE_INTERNAL') || die();
 
-$tasks = array(
+$observers = array(
     array(
-        'classname' => '\local_eventocoursecreation\task\evento_course_creation_sync_task',
-        'blocking' => 0,
-        'minute' => '15',
-        'hour' => '22',
-        'day' => '*',
-        'dayofweek' => '*',
-        'month' => '*'
+        // Courses created through the restore interface never fire course_created,
+        // so this is the only event that catches a course copied from a template by hand.
+        'eventname' => '\core\event\course_restored',
+        'callback' => '\local_eventocoursecreation\observer::course_restored',
+        // Buffered until the surrounding database transaction has been committed.
+        'internal' => false,
     ),
-    array(
-        // Deliberately several hours apart from the course creation, so the two runs
-        // never compete for the same webservice at the same time.
-        'classname' => '\local_eventocoursecreation\task\evento_modul_description_sync_task',
-        'blocking' => 0,
-        'minute' => '20',
-        'hour' => '3',
-        'day' => '*',
-        'dayofweek' => '*',
-        'month' => '*'
-    )
 );
