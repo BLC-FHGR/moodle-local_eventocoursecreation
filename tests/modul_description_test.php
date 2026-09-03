@@ -270,6 +270,68 @@ final class modul_description_test extends \advanced_testcase {
     }
 
     /**
+     * The configured heading is put in front of the description text.
+     */
+    public function test_add_heading(): void {
+        $settings = $this->make_settings(array('heading' => 'Modulbeschreibung'));
+
+        $result = modul_description::add_heading('<p>Text</p>', $settings);
+
+        $this->assertStringStartsWith('<h2 class="eventomb-heading">Modulbeschreibung</h2>', $result);
+        $this->assertStringEndsWith('<p>Text</p>', $result);
+    }
+
+    /**
+     * An empty heading is a valid choice and adds nothing.
+     */
+    public function test_add_heading_can_be_switched_off(): void {
+        $this->assertSame('<p>Text</p>',
+            modul_description::add_heading('<p>Text</p>', $this->make_settings(array('heading' => ''))));
+        $this->assertSame('<p>Text</p>',
+            modul_description::add_heading('<p>Text</p>', $this->make_settings(array('heading' => '   '))));
+    }
+
+    /**
+     * An empty description stays empty, otherwise the guard against an empty evento
+     * answer overwriting a description would no longer hold.
+     */
+    public function test_add_heading_leaves_an_empty_description_empty(): void {
+        $settings = $this->make_settings(array('heading' => 'Modulbeschreibung'));
+
+        $this->assertSame('', modul_description::add_heading('', $settings));
+        $this->assertSame('   ', modul_description::add_heading('   ', $settings));
+        $this->assertNull(modul_description::content_hash(modul_description::add_heading('', $settings)));
+    }
+
+    /**
+     * A heading given by an administrator is text and not markup.
+     */
+    public function test_add_heading_escapes_the_configured_text(): void {
+        $settings = $this->make_settings(array('heading' => 'Beschreibung <b>fett</b>'));
+
+        $result = modul_description::add_heading('<p>Text</p>', $settings);
+
+        $this->assertStringContainsString('&lt;b&gt;fett&lt;/b&gt;', $result);
+        $this->assertStringNotContainsString('<b>', $result);
+    }
+
+    /**
+     * The heading is part of the hash, so the page is written once when it changes and
+     * left alone afterwards.
+     */
+    public function test_add_heading_is_part_of_the_hash(): void {
+        $without = modul_description::content_hash(
+            modul_description::add_heading('<p>Text</p>', $this->make_settings(array('heading' => ''))));
+        $with = modul_description::content_hash(
+            modul_description::add_heading('<p>Text</p>', $this->make_settings(array('heading' => 'Titel'))));
+        $again = modul_description::content_hash(
+            modul_description::add_heading('<p>Text</p>', $this->make_settings(array('heading' => 'Titel'))));
+
+        $this->assertNotSame($without, $with);
+        $this->assertSame($with, $again);
+    }
+
+    /**
      * Cosmetic differences must not look like a change, otherwise the sync writes on every run.
      */
     public function test_normalize_content_ignores_cosmetic_differences(): void {

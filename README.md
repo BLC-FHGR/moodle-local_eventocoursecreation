@@ -86,6 +86,7 @@ changes in Evento. Teachers cannot edit, move, hide or delete it.
 | Import module descriptions | Switches the whole import on and off |
 | Courses to synchronise | Running and future courses, or future courses only |
 | Page name | Name of the page resource |
+| Heading above the description | Put in front of the text inside the page, empty for none |
 | Page ID number | Marker on the course module, do not change it once courses exist |
 | Accepted Evento status ids | Comma separated, 61003 is "approved", empty accepts every status |
 | Import descriptions valid in the future | Needed for courses created before the term starts |

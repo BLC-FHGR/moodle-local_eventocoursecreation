@@ -144,7 +144,9 @@ if (is_null($anlassnummer)) {
 }
 
 $converted = \local_eventocoursecreation\modul_description::convert_structure($raw);
-$cleaned = \local_eventocoursecreation\modul_description::clean_content($raw);
+$cleaned = \local_eventocoursecreation\modul_description::add_heading(
+    \local_eventocoursecreation\modul_description::clean_content($raw),
+    \local_eventocoursecreation\modul_description::get_settings());
 $hash = \local_eventocoursecreation\modul_description::content_hash($cleaned);
 // The built in sample carries no evento metadata, so the description stays empty there.
 $intro = \local_eventocoursecreation\modul_description::build_intro($normalized ?? null);

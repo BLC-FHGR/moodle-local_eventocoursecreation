@@ -86,6 +86,8 @@ class modul_description {
         $settings->scope = $config->moduldescriptionscope ?? EVENTOCOURSECREATION_MB_SCOPE_CURRENT;
         $settings->pagename = trim((string)($config->moduldescriptionpagename ?? EVENTOCOURSECREATION_MB_PAGENAME));
         $settings->cmidnumber = trim((string)($config->moduldescriptioncmidnumber ?? EVENTOCOURSECREATION_MB_CMIDNUMBER));
+        // An empty heading is a valid choice, so no default is put back in below.
+        $settings->heading = trim((string)($config->moduldescriptionheading ?? EVENTOCOURSECREATION_MB_HEADING));
         $settings->allowedstatus = self::parse_status_list(
             $config->moduldescriptionallowedstatus ?? EVENTOCOURSECREATION_MB_ALLOWEDSTATUS);
         $settings->futurevalid = !empty($config->moduldescriptionfuturevalid);
@@ -433,6 +435,33 @@ class modul_description {
         }
 
         return sha1($normalized);
+    }
+
+    /**
+     * Puts the configured heading in front of the description text.
+     *
+     * Unlike the description line this belongs to the text and is therefore part of the
+     * comparison hash. It has to be added before the hash is built, otherwise the hash
+     * read back from the page would never match the one built from the evento answer and
+     * the page would be written again on every single run.
+     *
+     * Nothing is added to an empty text. The emptiness of the text is what stops an empty
+     * answer of evento from overwriting a description, and a page holding nothing but a
+     * heading would defeat that.
+     *
+     * @param string $content the cleaned html of the evento description
+     * @param \stdClass $settings the settings as returned by {@see self::get_settings()}
+     * @return string the content to store
+     */
+    public static function add_heading($content, \stdClass $settings): string {
+        $content = (string)$content;
+        $heading = trim((string)($settings->heading ?? ''));
+        if ($heading === '' || self::normalize_content($content) === '') {
+            return $content;
+        }
+
+        return \html_writer::tag('h2', s($heading), array('class' => self::CLASS_PREFIX . '-heading'))
+            . $content;
     }
 
     /**

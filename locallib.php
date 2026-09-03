@@ -128,6 +128,11 @@ define('EVENTOCOURSECREATION_MB_CMIDNUMBER', 'evento.modulbeschreibung');
 define('EVENTOCOURSECREATION_MB_PAGENAME', 'Modulbeschreibung');
 
 /**
+ * Default heading put in front of the module description text of evento
+ */
+define('EVENTOCOURSECREATION_MB_HEADING', 'Modulbeschreibung');
+
+/**
  * Default list of accepted evento status ids of a module description.
  *
  * 61003 is "mb.Genehmigt" (approved). The other values of the "mb." range are

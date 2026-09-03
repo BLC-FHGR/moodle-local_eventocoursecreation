@@ -163,6 +163,11 @@ if ($hassiteconfig) {
                     get_string('moduldescriptionpagename_help', 'local_eventocoursecreation'),
                     EVENTOCOURSECREATION_MB_PAGENAME, PARAM_TEXT));
 
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/moduldescriptionheading',
+                    get_string('moduldescriptionheading', 'local_eventocoursecreation'),
+                    get_string('moduldescriptionheading_help', 'local_eventocoursecreation'),
+                    EVENTOCOURSECREATION_MB_HEADING, PARAM_TEXT));
+
     $settings->add(new admin_setting_configtext('local_eventocoursecreation/moduldescriptioncmidnumber',
                     get_string('moduldescriptioncmidnumber', 'local_eventocoursecreation'),
                     get_string('moduldescriptioncmidnumber_help', 'local_eventocoursecreation'),

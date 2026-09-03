@@ -226,6 +226,8 @@ class modul_description_sync {
 
         $normalized = \local_evento_evento_service::normalize_modulbeschreibung($answer);
         $content = is_null($normalized) ? '' : modul_description::clean_content($normalized->mbtext);
+        // The heading belongs to the text, so it goes in before the hash is built.
+        $content = modul_description::add_heading($content, $this->settings);
         $newhash = modul_description::content_hash($content);
 
         // Neither the description line nor the name is part of the content and therefore
