@@ -80,7 +80,7 @@ changes in Evento. Teachers cannot edit, move, hide or delete it.
     a role that gained the right to edit activities later is covered as well.
 *   The credits of the module are written into the module properties of the description.
     They live on the Evento event and not on the module description, so they need a second
-    webservice call, which is only made when the credits sentence is configured at all. An
+    webservice call, which is only made while the credits are switched on. An
     It goes in front of the first property, wrapped in the
     configured element; Evento writes every property as a definition list of its own, so
     the default `dl` spaces it exactly like one property against the next.
@@ -93,7 +93,8 @@ changes in Evento. Teachers cannot edit, move, hide or delete it.
 | Courses to synchronise | Running and future courses, or future courses only |
 | Page name | Name of the page resource |
 | Heading above the description | Put in front of the text inside the page, empty for none |
-| Credits sentence | Written into the module properties, `[ECTS]` carries the Evento value, empty for none |
+| Show the credits | Switches the credits sentence on and off, with it the second webservice call |
+| Credits sentence | Written into the module properties, `[ECTS]` carries the Evento value |
 | Element of the credits sentence | Decides how large the sentence is shown |
 | Element around the credits sentence | `dl` spaces it like one Evento property against the next, empty for none |
 | Page ID number | Marker on the course module, do not change it once courses exist |

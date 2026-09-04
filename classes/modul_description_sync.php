@@ -333,15 +333,15 @@ class modul_description_sync {
      * Reads the credits of an evento event.
      *
      * They live on the event and not on the module description, so they need a call of
-     * their own. It is only made when the credits are wanted at all, which keeps the
-     * traffic unchanged for anybody who switches the sentence off.
+     * their own. It is only made when the credits are switched on and a sentence is
+     * configured, which keeps the traffic unchanged for anybody who does not want them.
      *
      * @param string $anlassnummer the evento event number
      * @return float|null the value of anlass_ECTS, null when evento names none
      * @throws \Throwable if the webservice call failed
      */
     protected function get_ects($anlassnummer) {
-        if (trim((string)$this->settings->ectstext) === '') {
+        if (empty($this->settings->showects) || trim((string)$this->settings->ectstext) === '') {
             return null;
         }
 

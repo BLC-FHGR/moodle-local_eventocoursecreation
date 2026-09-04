@@ -168,6 +168,10 @@ if ($hassiteconfig) {
                     get_string('moduldescriptionheading_help', 'local_eventocoursecreation'),
                     EVENTOCOURSECREATION_MB_HEADING, PARAM_TEXT));
 
+    $settings->add(new admin_setting_configcheckbox('local_eventocoursecreation/moduldescriptionshowects',
+                    new lang_string('moduldescriptionshowects', 'local_eventocoursecreation'),
+                    new lang_string('moduldescriptionshowects_help', 'local_eventocoursecreation'), 1));
+
     $settings->add(new admin_setting_configtext('local_eventocoursecreation/moduldescriptionectstext',
                     get_string('moduldescriptionectstext', 'local_eventocoursecreation'),
                     get_string('moduldescriptionectstext_help', 'local_eventocoursecreation'),

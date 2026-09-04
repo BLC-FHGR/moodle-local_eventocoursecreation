@@ -88,7 +88,7 @@ class modul_description {
         $settings->cmidnumber = trim((string)($config->moduldescriptioncmidnumber ?? EVENTOCOURSECREATION_MB_CMIDNUMBER));
         // An empty heading is a valid choice, so no default is put back in below.
         $settings->heading = trim((string)($config->moduldescriptionheading ?? EVENTOCOURSECREATION_MB_HEADING));
-        // Same here, an empty text switches the credits sentence off.
+        $settings->showects = !empty($config->moduldescriptionshowects ?? 1);
         $settings->ectstext = trim((string)($config->moduldescriptionectstext ?? EVENTOCOURSECREATION_MB_ECTSTEXT));
         $settings->ectstag = self::sanitise_ects_tag($config->moduldescriptionectstag ?? EVENTOCOURSECREATION_MB_ECTSTAG);
         $settings->ectswrap = self::sanitise_ects_wrap(
@@ -501,12 +501,13 @@ class modul_description {
      *
      * @param float|string|null $ects the value of the evento field anlass_ECTS
      * @param \stdClass $settings the settings as returned by {@see self::get_settings()}
-     * @return string the sentence as plain text, empty when there is nothing to say
+     * @return string the sentence as plain text, empty when the credits are switched off
+     *                or when there is nothing to say
      */
     public static function build_ects_text($ects, \stdClass $settings): string {
         $template = trim((string)($settings->ectstext ?? ''));
         $credits = self::format_ects($ects);
-        if ($template === '' || is_null($credits)) {
+        if (empty($settings->showects) || $template === '' || is_null($credits)) {
             return '';
         }
 
