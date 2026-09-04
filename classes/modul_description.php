@@ -88,6 +88,11 @@ class modul_description {
         $settings->cmidnumber = trim((string)($config->moduldescriptioncmidnumber ?? EVENTOCOURSECREATION_MB_CMIDNUMBER));
         // An empty heading is a valid choice, so no default is put back in below.
         $settings->heading = trim((string)($config->moduldescriptionheading ?? EVENTOCOURSECREATION_MB_HEADING));
+        // Same here, an empty text switches the credits sentence off.
+        $settings->ectstext = trim((string)($config->moduldescriptionectstext ?? EVENTOCOURSECREATION_MB_ECTSTEXT));
+        $settings->ectstag = self::sanitise_ects_tag($config->moduldescriptionectstag ?? EVENTOCOURSECREATION_MB_ECTSTAG);
+        $settings->ectswrap = self::sanitise_ects_wrap(
+            $config->moduldescriptionectswrap ?? EVENTOCOURSECREATION_MB_ECTSWRAP);
         $settings->allowedstatus = self::parse_status_list(
             $config->moduldescriptionallowedstatus ?? EVENTOCOURSECREATION_MB_ALLOWEDSTATUS);
         $settings->futurevalid = !empty($config->moduldescriptionfuturevalid);
@@ -435,6 +440,204 @@ class modul_description {
         }
 
         return sha1($normalized);
+    }
+
+    /**
+     * Keeps the configured html element for the credits sentence usable.
+     *
+     * An administrator may write the element with or without the angle brackets. Only
+     * elements which survive the purifier and which carry no meaning of their own are
+     * offered, everything else falls back to the default.
+     *
+     * @param string $tag the configured element
+     * @return string the element name without the angle brackets
+     */
+    public static function sanitise_ects_tag($tag): string {
+        $allowed = array('dt', 'dd', 'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'span');
+        $tag = \core_text::strtolower(trim(trim((string)$tag), '<>/ '));
+
+        return in_array($tag, $allowed, true) ? $tag : EVENTOCOURSECREATION_MB_ECTSTAG;
+    }
+
+    /**
+     * Keeps the configured html element around the credits sentence usable.
+     *
+     * An empty setting is a valid choice and means that nothing is put around the
+     * sentence. Anything which is neither empty nor one of the offered elements falls
+     * back to the default, so that no configuration can produce broken markup.
+     *
+     * @param string $tag the configured element
+     * @return string the element name without the angle brackets, empty for none
+     */
+    public static function sanitise_ects_wrap($tag): string {
+        $allowed = array('dl', 'div', 'ul', 'ol', 'p', 'blockquote');
+        $tag = \core_text::strtolower(trim(trim((string)$tag), '<>/ '));
+        if ($tag === '') {
+            return '';
+        }
+
+        return in_array($tag, $allowed, true) ? $tag : EVENTOCOURSECREATION_MB_ECTSWRAP;
+    }
+
+    /**
+     * Turns the evento credits into something readable.
+     *
+     * The webservice delivers a float. Whole credits are shown without a decimal place,
+     * so that four credits read as 4 and not as 4.00.
+     *
+     * @param float|string|null $value the value of the evento field anlass_ECTS
+     * @return string|null the credits to show, or null if evento names none
+     */
+    public static function format_ects($value): ?string {
+        if (is_null($value) || $value === '' || !is_numeric($value)) {
+            return null;
+        }
+
+        return rtrim(rtrim(sprintf('%.2F', (float)$value), '0'), '.');
+    }
+
+    /**
+     * Builds the sentence naming the credits of the module.
+     *
+     * @param float|string|null $ects the value of the evento field anlass_ECTS
+     * @param \stdClass $settings the settings as returned by {@see self::get_settings()}
+     * @return string the sentence as plain text, empty when there is nothing to say
+     */
+    public static function build_ects_text($ects, \stdClass $settings): string {
+        $template = trim((string)($settings->ectstext ?? ''));
+        $credits = self::format_ects($ects);
+        if ($template === '' || is_null($credits)) {
+            return '';
+        }
+
+        return str_replace(EVENTOCOURSECREATION_MB_ECTSPLACEHOLDER, $credits, $template);
+    }
+
+    /**
+     * Writes the credits of the module into the description text.
+     *
+     * The sentence goes into the section of the module properties, in front of the first
+     * entry of its list, which is where a reader looks for a property of the module. A
+     * list element is put inside that list, any other element in front of it, so that the
+     * markup stays valid whatever the configuration says. A description without that
+     * section, which would mean evento changed its markup, gets the sentence at the very
+     * top instead of losing it.
+     *
+     * Like the heading this belongs to the text and has to be added before the comparison
+     * hash is built.
+     *
+     * @param string $content the cleaned html of the evento description
+     * @param float|string|null $ects the value of the evento field anlass_ECTS
+     * @param \stdClass $settings the settings as returned by {@see self::get_settings()}
+     * @return string the content to store
+     */
+    public static function add_ects($content, $ects, \stdClass $settings): string {
+        $content = (string)$content;
+        $text = self::build_ects_text($ects, $settings);
+        if ($text === '' || self::normalize_content($content) === '') {
+            return $content;
+        }
+
+        $previous = libxml_use_internal_errors(true);
+        $doc = new \DOMDocument('1.0', 'UTF-8');
+        $wrapped = '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">'
+            . '<div id="' . self::DOM_ROOT_ID . '">' . $content . '</div>';
+        $loaded = $doc->loadHTML($wrapped, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        if (!$loaded) {
+            return $content;
+        }
+
+        $xpath = new \DOMXPath($doc);
+        $root = $xpath->query('//div[@id="' . self::DOM_ROOT_ID . '"]')->item(0);
+        if (is_null($root)) {
+            return $content;
+        }
+
+        self::insert_ects_element($doc, $xpath, $root, $text, $settings);
+
+        $result = '';
+        foreach ($root->childNodes as $child) {
+            $result .= $doc->saveHTML($child);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Puts the credits sentence at the place it belongs to inside the description.
+     *
+     * The sentence goes in front of the first property of the module, wrapped in the
+     * configured element. Evento writes every property as a definition list of its own,
+     * so the default of a list of its own spaces the sentence exactly like one property
+     * against the next, without a stylesheet having a say in it.
+     *
+     * @param \DOMDocument $doc the document being built
+     * @param \DOMXPath $xpath the xpath of that document
+     * @param \DOMElement $root the wrapper holding the description
+     * @param string $text the sentence as plain text
+     * @param \stdClass $settings the settings as returned by {@see self::get_settings()}
+     * @return void
+     */
+    protected static function insert_ects_element(\DOMDocument $doc, \DOMXPath $xpath,
+            \DOMElement $root, $text, \stdClass $settings) {
+
+        $tag = self::sanitise_ects_tag($settings->ectstag ?? EVENTOCOURSECREATION_MB_ECTSTAG);
+
+        $section = $xpath->query('.//*[contains(concat(" ", normalize-space(@class), " "), '
+            . '" ' . self::CLASS_PREFIX . '-moduleigenschaften ")]', $root)->item(0);
+        $list = is_null($section) ? null : $xpath->query('.//dl', $section)->item(0);
+
+        $element = $doc->createElement($tag);
+        $element->setAttribute('class', self::CLASS_PREFIX . '-ects');
+        $element->appendChild($doc->createTextNode($text));
+
+        $wrap = self::sanitise_ects_wrap($settings->ectswrap ?? EVENTOCOURSECREATION_MB_ECTSWRAP);
+        if ($wrap === '') {
+            $node = $element;
+        } else {
+            $node = $doc->createElement($wrap);
+            $node->setAttribute('class', self::CLASS_PREFIX . '-ects-wrap');
+            $node->appendChild($element);
+        }
+
+        if (!is_null($list) && !is_null($list->parentNode)) {
+            $list->parentNode->insertBefore($node, $list);
+
+            return;
+        }
+
+        if (!is_null($section)) {
+            // Behind the heading of the section, or at its top when it carries none.
+            $heading = $xpath->query('.//h1|.//h2|.//h3|.//h4|.//h5|.//h6', $section)->item(0);
+            if (!is_null($heading) && !is_null($heading->parentNode)) {
+                self::insert_after($heading, $node);
+            } else {
+                $section->insertBefore($node, $section->firstChild);
+            }
+
+            return;
+        }
+
+        // Evento changed its markup, better at the top than nowhere.
+        $root->insertBefore($node, $root->firstChild);
+    }
+
+    /**
+     * Puts a node directly behind another one.
+     *
+     * @param \DOMNode $reference the node to insert behind
+     * @param \DOMNode $new the node to insert
+     * @return void
+     */
+    protected static function insert_after(\DOMNode $reference, \DOMNode $new) {
+        if (is_null($reference->parentNode)) {
+            return;
+        }
+
+        $reference->parentNode->insertBefore($new, $reference->nextSibling);
     }
 
     /**

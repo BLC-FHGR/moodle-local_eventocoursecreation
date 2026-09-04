@@ -225,8 +225,21 @@ class modul_description_sync {
         }
 
         $normalized = \local_evento_evento_service::normalize_modulbeschreibung($answer);
+        try {
+            $ects = $this->get_ects($anlassnummer);
+        } catch (\Throwable $ex) {
+            // Leaving the sentence out instead would flip the content back and forth
+            // between the runs, so the course is left untouched until the call works.
+            $message = 'the credits could not be read: ' . $ex->getMessage();
+            $this->store_failure($course, $anlassnummer, $cm, $message);
+
+            return $this->finish($course, $anlassnummer, modul_description::ACTION_SKIP_NODESCRIPTION,
+                $message, is_null($cm) ? null : (int)$cm->id, false);
+        }
+
         $content = is_null($normalized) ? '' : modul_description::clean_content($normalized->mbtext);
-        // The heading belongs to the text, so it goes in before the hash is built.
+        // Both belong to the text, so they go in before the hash is built.
+        $content = modul_description::add_ects($content, $ects, $this->settings);
         $content = modul_description::add_heading($content, $this->settings);
         $newhash = modul_description::content_hash($content);
 
@@ -314,6 +327,34 @@ class modul_description_sync {
 
         $this->store_record($course, $anlassnummer, (int)$cm->id, $normalized, $contenthash,
             modul_description::ACTION_UPDATE);
+    }
+
+    /**
+     * Reads the credits of an evento event.
+     *
+     * They live on the event and not on the module description, so they need a call of
+     * their own. It is only made when the credits are wanted at all, which keeps the
+     * traffic unchanged for anybody who switches the sentence off.
+     *
+     * @param string $anlassnummer the evento event number
+     * @return float|null the value of anlass_ECTS, null when evento names none
+     * @throws \Throwable if the webservice call failed
+     */
+    protected function get_ects($anlassnummer) {
+        if (trim((string)$this->settings->ectstext) === '') {
+            return null;
+        }
+
+        $answer = $this->get_service()->get_event_by_number($anlassnummer);
+        // The operation answers with a list, and an event number matches at most once.
+        $event = is_array($answer) ? reset($answer) : $answer;
+        if (!is_object($event)) {
+            return null;
+        }
+
+        $ects = $event->anlass_ECTS ?? null;
+
+        return is_numeric($ects) ? (float)$ects : null;
     }
 
     /**

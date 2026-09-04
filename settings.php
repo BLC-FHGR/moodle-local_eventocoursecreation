@@ -168,6 +168,21 @@ if ($hassiteconfig) {
                     get_string('moduldescriptionheading_help', 'local_eventocoursecreation'),
                     EVENTOCOURSECREATION_MB_HEADING, PARAM_TEXT));
 
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/moduldescriptionectstext',
+                    get_string('moduldescriptionectstext', 'local_eventocoursecreation'),
+                    get_string('moduldescriptionectstext_help', 'local_eventocoursecreation'),
+                    EVENTOCOURSECREATION_MB_ECTSTEXT, PARAM_TEXT));
+
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/moduldescriptionectstag',
+                    get_string('moduldescriptionectstag', 'local_eventocoursecreation'),
+                    get_string('moduldescriptionectstag_help', 'local_eventocoursecreation'),
+                    EVENTOCOURSECREATION_MB_ECTSTAG, PARAM_TEXT));
+
+    $settings->add(new admin_setting_configtext('local_eventocoursecreation/moduldescriptionectswrap',
+                    get_string('moduldescriptionectswrap', 'local_eventocoursecreation'),
+                    get_string('moduldescriptionectswrap_help', 'local_eventocoursecreation'),
+                    EVENTOCOURSECREATION_MB_ECTSWRAP, PARAM_TEXT));
+
     $settings->add(new admin_setting_configtext('local_eventocoursecreation/moduldescriptioncmidnumber',
                     get_string('moduldescriptioncmidnumber', 'local_eventocoursecreation'),
                     get_string('moduldescriptioncmidnumber_help', 'local_eventocoursecreation'),
