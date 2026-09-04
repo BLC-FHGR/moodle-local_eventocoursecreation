@@ -98,7 +98,9 @@ cli_writeln('== Source ==');
 
 if (is_null($anlassnummer)) {
     $raw = $sample;
-    cli_writeln('  built in sample');
+    // A value of its own, so the sample also shows where the credits sentence lands.
+    $ects = 4;
+    cli_writeln('  built in sample, with 4 credits made up for it');
 } else {
     $overrides = array();
     if (!empty($options['wslocation'])) {
@@ -112,6 +114,8 @@ if (is_null($anlassnummer)) {
         $client = empty($overrides) ? null : local_evento_evento_service::create_soap_client($overrides);
         $service = new local_evento_evento_service($client);
         $answer = $service->get_modulbeschreibung_by_number($anlassnummer);
+        // The credits live on the event and not on the module description.
+        $eventanswer = $service->get_event_by_number($anlassnummer);
     } catch (Throwable $ex) {
         // The default handler hides the debug information unless debugging is on,
         // which turns a webservice problem into an unusable one line message.
@@ -137,6 +141,10 @@ if (is_null($anlassnummer)) {
         . ($accepted ? '' : ', NOT in the accepted status ids, this description would be skipped'));
     cli_writeln('  mbVersion:     ' . $normalized->mbversionstring
         . ' (scaled ' . $normalized->mbversionscaled . ')');
+    $event = is_array($eventanswer) ? reset($eventanswer) : $eventanswer;
+    $ects = (is_object($event) && is_numeric($event->anlass_ECTS ?? null)) ? (float)$event->anlass_ECTS : null;
+
+    cli_writeln('  anlass_ECTS:   ' . (is_null($ects) ? 'evento names none' : $ects));
     cli_writeln('  mbGueltigAb:   ' . $normalized->mbgueltigabraw
         . (($normalized->mbgueltigab && $normalized->mbgueltigab > time())
             ? ($settings->futurevalid ? ', in the future but accepted' : ', in the future, this would be skipped')
@@ -144,9 +152,10 @@ if (is_null($anlassnummer)) {
 }
 
 $converted = \local_eventocoursecreation\modul_description::convert_structure($raw);
-$cleaned = \local_eventocoursecreation\modul_description::add_heading(
-    \local_eventocoursecreation\modul_description::clean_content($raw),
-    \local_eventocoursecreation\modul_description::get_settings());
+$previewsettings = \local_eventocoursecreation\modul_description::get_settings();
+$cleaned = \local_eventocoursecreation\modul_description::clean_content($raw);
+$cleaned = \local_eventocoursecreation\modul_description::add_ects($cleaned, $ects, $previewsettings);
+$cleaned = \local_eventocoursecreation\modul_description::add_heading($cleaned, $previewsettings);
 $hash = \local_eventocoursecreation\modul_description::content_hash($cleaned);
 // The built in sample carries no evento metadata, so the description stays empty there.
 $intro = \local_eventocoursecreation\modul_description::build_intro($normalized ?? null);

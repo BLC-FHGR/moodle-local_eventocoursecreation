@@ -133,6 +133,33 @@ define('EVENTOCOURSECREATION_MB_PAGENAME', 'Modulbeschreibung');
 define('EVENTOCOURSECREATION_MB_HEADING', 'Modulbeschreibung');
 
 /**
+ * Default sentence naming the credits of the module.
+ *
+ * The value of the evento field anlass_ECTS replaces the placeholder. An empty
+ * setting switches the sentence off and saves the webservice call it needs.
+ */
+define('EVENTOCOURSECREATION_MB_ECTSTEXT', 'Dieses Modul hat [ECTS]ECTS');
+
+/**
+ * Placeholder inside the credits sentence which carries the evento value.
+ */
+define('EVENTOCOURSECREATION_MB_ECTSPLACEHOLDER', '[ECTS]');
+
+/**
+ * Default html element the credits sentence is written into.
+ */
+define('EVENTOCOURSECREATION_MB_ECTSTAG', 'dt');
+
+/**
+ * Default html element put around the credits sentence.
+ *
+ * Evento writes every module property as a definition list of its own, so a list of
+ * its own is what spaces the sentence like one property against the next. An empty
+ * setting puts no element around it at all.
+ */
+define('EVENTOCOURSECREATION_MB_ECTSWRAP', 'dl');
+
+/**
  * Default list of accepted evento status ids of a module description.
  *
  * 61003 is "mb.Genehmigt" (approved). The other values of the "mb." range are

@@ -64,6 +64,7 @@ final class modul_description_test extends \advanced_testcase {
         $settings->cmidnumber = EVENTOCOURSECREATION_MB_CMIDNUMBER;
         $settings->batchsize = 200;
         $settings->retryhours = 24;
+        $settings->ectswrap = EVENTOCOURSECREATION_MB_ECTSWRAP;
         foreach ($overrides as $name => $value) {
             $settings->$name = $value;
         }
@@ -267,6 +268,192 @@ final class modul_description_test extends \advanced_testcase {
         $this->assertStringContainsString('<dt>Modultyp</dt>', $result);
         $this->assertStringContainsString('<table>', $result);
         $this->assertStringContainsString('https://example.org', $result);
+    }
+
+    /**
+     * Builds a cleaned description in the shape evento delivers it.
+     *
+     * @return string the html
+     */
+    private function make_cleaned_description(): string {
+        return '<div class="eventomb-modulbeschreibung eventomb">'
+            . '<div class="eventomb-moduleigenschaften eventomb-section">'
+            . '<h2>Moduleigenschaften</h2>'
+            . '<dl><dt>Modultyp</dt><dd class="eventomb-modultyp">Wahlpflichtmodul</dd></dl>'
+            . '</div></div>';
+    }
+
+    /**
+     * Whole credits read without a decimal place.
+     */
+    public function test_format_ects(): void {
+        $this->assertSame('4', modul_description::format_ects(4.0));
+        $this->assertSame('2', modul_description::format_ects('2'));
+        $this->assertSame('2.5', modul_description::format_ects(2.5));
+        $this->assertNull(modul_description::format_ects(null));
+        $this->assertNull(modul_description::format_ects(''));
+        $this->assertNull(modul_description::format_ects('viele'));
+    }
+
+    /**
+     * Only elements which survive the purifier are accepted, with or without brackets.
+     */
+    public function test_sanitise_ects_tag(): void {
+        $this->assertSame('dt', modul_description::sanitise_ects_tag('<dt>'));
+        $this->assertSame('dt', modul_description::sanitise_ects_tag(' DT '));
+        $this->assertSame('h3', modul_description::sanitise_ects_tag('h3'));
+        $this->assertSame('p', modul_description::sanitise_ects_tag('<p>'));
+        // Anything else falls back to the default instead of producing broken markup.
+        $this->assertSame(EVENTOCOURSECREATION_MB_ECTSTAG, modul_description::sanitise_ects_tag('script'));
+        $this->assertSame(EVENTOCOURSECREATION_MB_ECTSTAG, modul_description::sanitise_ects_tag(''));
+    }
+
+    /**
+     * The element around the sentence is configurable, and an empty value means none.
+     */
+    public function test_sanitise_ects_wrap(): void {
+        $this->assertSame('dl', modul_description::sanitise_ects_wrap('<dl>'));
+        $this->assertSame('div', modul_description::sanitise_ects_wrap(' DIV '));
+        // Empty is a valid choice and means that nothing is put around the sentence.
+        $this->assertSame('', modul_description::sanitise_ects_wrap(''));
+        $this->assertSame('', modul_description::sanitise_ects_wrap('  '));
+        // Anything else falls back instead of producing broken markup.
+        $this->assertSame(EVENTOCOURSECREATION_MB_ECTSWRAP, modul_description::sanitise_ects_wrap('script'));
+    }
+
+    /**
+     * The configured element really is the one that ends up around the sentence.
+     */
+    public function test_add_ects_uses_the_configured_wrap(): void {
+        $content = $this->make_cleaned_description();
+        $text = 'Dieses Modul hat [ECTS]ECTS';
+
+        $indiv = modul_description::add_ects($content, 4.0, $this->make_settings(
+            array('ectstext' => $text, 'ectstag' => 'p', 'ectswrap' => 'div')));
+        $bare = modul_description::add_ects($content, 4.0, $this->make_settings(
+            array('ectstext' => $text, 'ectstag' => 'p', 'ectswrap' => '')));
+
+        $this->assertStringContainsString('<div class="eventomb-ects-wrap">'
+            . '<p class="eventomb-ects">Dieses Modul hat 4ECTS</p></div>', $indiv);
+        $this->assertStringContainsString('<p class="eventomb-ects">Dieses Modul hat 4ECTS</p><dl>', $bare);
+        $this->assertStringNotContainsString('eventomb-ects-wrap', $bare);
+    }
+
+    /**
+     * The placeholder carries the evento value.
+     */
+    public function test_build_ects_text(): void {
+        $settings = $this->make_settings(array('ectstext' => 'Dieses Modul hat [ECTS]ECTS'));
+
+        $this->assertSame('Dieses Modul hat 4ECTS', modul_description::build_ects_text(4.0, $settings));
+        $this->assertSame('Dieses Modul hat 2.5ECTS', modul_description::build_ects_text(2.5, $settings));
+        // Without a value from evento there is nothing to say.
+        $this->assertSame('', modul_description::build_ects_text(null, $settings));
+        $this->assertSame('', modul_description::build_ects_text(4.0,
+            $this->make_settings(array('ectstext' => ''))));
+    }
+
+    /**
+     * A list element gets a definition list of its own, in front of the first property.
+     *
+     * Evento writes every property as a list of its own, so this is what spaces the
+     * sentence like one property against the next.
+     */
+    public function test_add_ects_into_a_list_of_its_own(): void {
+        $settings = $this->make_settings(array('ectstext' => 'Dieses Modul hat [ECTS]ECTS', 'ectstag' => 'dt'));
+
+        $result = modul_description::add_ects($this->make_cleaned_description(), 4.0, $settings);
+
+        $this->assertStringContainsString('<dl class="eventomb-ects-wrap">'
+            . '<dt class="eventomb-ects">Dieses Modul hat 4ECTS</dt></dl>'
+            . '<dl><dt>Modultyp</dt>', $result);
+    }
+
+    /**
+     * Any other element goes in front of that list, behind the heading of the section.
+     */
+    public function test_add_ects_in_front_of_the_property_list(): void {
+        $settings = $this->make_settings(array('ectstext' => 'Dieses Modul hat [ECTS]ECTS', 'ectstag' => 'h3'));
+
+        $result = modul_description::add_ects($this->make_cleaned_description(), 4.0, $settings);
+
+        $this->assertStringContainsString('<h2>Moduleigenschaften</h2>'
+            . '<h3 class="eventomb-ects">Dieses Modul hat 4ECTS</h3><dl>', $result);
+    }
+
+    /**
+     * The properties of evento are left as they are, the sentence only joins them.
+     */
+    public function test_add_ects_leaves_the_evento_properties_alone(): void {
+        $content = $this->make_cleaned_description();
+        $text = 'Dieses Modul hat [ECTS]ECTS';
+
+        $result = modul_description::add_ects($content, 4.0,
+            $this->make_settings(array('ectstext' => $text, 'ectstag' => 'dt')));
+
+        // The list of the first property keeps exactly the entries evento wrote.
+        $this->assertStringContainsString(
+            '<dl><dt>Modultyp</dt><dd class="eventomb-modultyp">Wahlpflichtmodul</dd></dl>', $result);
+        // No sentence, no list of its own.
+        $this->assertStringNotContainsString('eventomb-ects',
+            modul_description::add_ects($content, null,
+                $this->make_settings(array('ectstext' => $text, 'ectstag' => 'dt'))));
+    }
+
+    /**
+     * A description without the property section keeps the sentence at the very top.
+     */
+    public function test_add_ects_without_a_property_section(): void {
+        $settings = $this->make_settings(array('ectstext' => 'Dieses Modul hat [ECTS]ECTS', 'ectstag' => 'dt'));
+
+        $result = modul_description::add_ects('<div class="eventomb"><p>Nur Text</p></div>', 4.0, $settings);
+
+        $this->assertStringStartsWith('<dl class="eventomb-ects-wrap">'
+            . '<dt class="eventomb-ects">Dieses Modul hat 4ECTS</dt></dl>', $result);
+    }
+
+    /**
+     * Nothing is added when there is nothing to add.
+     */
+    public function test_add_ects_adds_nothing_without_a_value_or_a_text(): void {
+        $content = $this->make_cleaned_description();
+        $withtext = $this->make_settings(array('ectstext' => 'Dieses Modul hat [ECTS]ECTS', 'ectstag' => 'dt'));
+
+        $this->assertSame($content, modul_description::add_ects($content, null, $withtext));
+        $this->assertSame($content, modul_description::add_ects($content, 4.0,
+            $this->make_settings(array('ectstext' => '', 'ectstag' => 'dt'))));
+        // An empty description stays empty, the guard against an empty evento answer.
+        $this->assertSame('', modul_description::add_ects('', 4.0, $withtext));
+    }
+
+    /**
+     * The sentence is part of the hash and comes out the same on every run.
+     */
+    public function test_add_ects_is_stable_and_part_of_the_hash(): void {
+        $content = $this->make_cleaned_description();
+        $settings = $this->make_settings(array('ectstext' => 'Dieses Modul hat [ECTS]ECTS', 'ectstag' => 'dt'));
+
+        $first = modul_description::add_ects($content, 4.0, $settings);
+        $second = modul_description::add_ects($content, 4.0, $settings);
+
+        $this->assertSame($first, $second);
+        $this->assertNotSame(modul_description::content_hash($content),
+            modul_description::content_hash($first));
+        $this->assertNotSame(modul_description::content_hash($first),
+            modul_description::content_hash(modul_description::add_ects($content, 6.0, $settings)));
+    }
+
+    /**
+     * A sentence given by an administrator is text and not markup.
+     */
+    public function test_add_ects_escapes_the_configured_text(): void {
+        $settings = $this->make_settings(
+            array('ectstext' => 'Modul <b>[ECTS]</b> ECTS', 'ectstag' => 'dt'));
+
+        $result = modul_description::add_ects($this->make_cleaned_description(), 4.0, $settings);
+
+        $this->assertStringContainsString('Modul &lt;b&gt;4&lt;/b&gt; ECTS', $result);
+        $this->assertStringNotContainsString('<b>', $result);
     }
 
     /**
