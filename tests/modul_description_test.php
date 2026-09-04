@@ -64,6 +64,7 @@ final class modul_description_test extends \advanced_testcase {
         $settings->cmidnumber = EVENTOCOURSECREATION_MB_CMIDNUMBER;
         $settings->batchsize = 200;
         $settings->retryhours = 24;
+        $settings->showects = true;
         $settings->ectswrap = EVENTOCOURSECREATION_MB_ECTSWRAP;
         foreach ($overrides as $name => $value) {
             $settings->$name = $value;
@@ -306,6 +307,27 @@ final class modul_description_test extends \advanced_testcase {
         // Anything else falls back to the default instead of producing broken markup.
         $this->assertSame(EVENTOCOURSECREATION_MB_ECTSTAG, modul_description::sanitise_ects_tag('script'));
         $this->assertSame(EVENTOCOURSECREATION_MB_ECTSTAG, modul_description::sanitise_ects_tag(''));
+    }
+
+    /**
+     * The checkbox switches the credits off, whatever the sentence says.
+     */
+    public function test_build_ects_text_is_switched_off_by_the_checkbox(): void {
+        $settings = $this->make_settings(
+            array('showects' => false, 'ectstext' => 'Dieses Modul hat [ECTS]ECTS'));
+
+        $this->assertSame('', modul_description::build_ects_text(4.0, $settings));
+    }
+
+    /**
+     * With the credits switched off nothing reaches the description.
+     */
+    public function test_add_ects_is_switched_off_by_the_checkbox(): void {
+        $content = $this->make_cleaned_description();
+        $settings = $this->make_settings(array('showects' => false,
+            'ectstext' => 'Dieses Modul hat [ECTS]ECTS', 'ectstag' => 'dt'));
+
+        $this->assertSame($content, modul_description::add_ects($content, 4.0, $settings));
     }
 
     /**
