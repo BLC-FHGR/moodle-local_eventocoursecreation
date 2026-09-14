@@ -36,8 +36,8 @@ use local_eventocoursecreation\event\modul_description_synced;
  * Synchronises the evento module description into the courses.
  *
  * One course at a time, so that a single failure never stops the others. Only a fault
- * which says that the webservice itself is unavailable ends the whole run, there is no
- * point in asking a dead service several hundred times.
+ * which repeats and says that the webservice itself is unavailable ends the whole run,
+ * there is no point in asking a dead service several hundred times.
  *
  * @package    local_eventocoursecreation
  * @copyright  2026 FH Graubuenden
@@ -45,18 +45,19 @@ use local_eventocoursecreation\event\modul_description_synced;
  */
 class modul_description_sync {
 
-    /** Soap fault codes which mean that the webservice as a whole is unavailable. */
+    /** Soap fault codes which may mean that the webservice as a whole is unavailable. */
     const STOP_FAULTCODES = array('HTTP', 'soapenv:Server', 'Server');
 
     /**
-     * Marks in a soap fault which mean that evento simply has no description for this event.
+     * How many faults in a row are needed before a whole run is given up.
      *
-     * Evento answers such a request with a fault and not with an empty result, and it uses
-     * the same fault code it uses for a real server problem. Only the message tells the two
-     * apart, so it has to be read. Both marks are looked for, the wording because it is what
-     * evento sends today, and the exception class because it survives a change of wording.
+     * A fault code on its own is no proof of a dead service. Evento reports a problem with
+     * a single record with "soapenv:Server" too, a missing module description among them,
+     * so a course whose fault is not recognized must not be able to end a run of several
+     * hundred courses. Only a fault which repeats is taken for the service itself, while a
+     * single one holds back its own course and nothing else.
      */
-    const NODESCRIPTION_MARKS = array('keine modulbeschreibung gefunden', 'dataretrievalexception');
+    const STOP_AFTER_FAULTS = 3;
 
     /** @var \progress_trace where the progress is written to. */
     protected $trace;
@@ -67,8 +68,8 @@ class modul_description_sync {
     /** @var \stdClass the settings of this feature. */
     protected $settings;
 
-    /** @var bool set once the webservice turned out to be unavailable. */
-    protected $serviceunavailable = false;
+    /** @var int faults in a row which may mean that the webservice is unavailable. */
+    protected $stopfaults = 0;
 
     /**
      * Constructor.
@@ -87,29 +88,28 @@ class modul_description_sync {
      * Tells whether a call ran into a fault meaning the webservice itself is unavailable.
      *
      * The adhoc import uses this to fail on purpose, so the task system retries later
-     * instead of leaving a new course without its description.
+     * instead of leaving a new course without its description. It looks at a single
+     * course, so a single fault is all the evidence there can be and is enough here.
+     * A whole run needs more, see {@see self::STOP_AFTER_FAULTS}.
      *
-     * @return bool true if the webservice turned out to be unavailable
+     * @return bool true if the last call ran into a fault which may mean that the
+     *              webservice is unavailable
      */
     public function is_service_unavailable(): bool {
-        return $this->serviceunavailable;
+        return $this->stopfaults > 0;
     }
 
     /**
      * Tells whether a soap fault only says that this event has no module description.
      *
+     * The marks live in local_evento, which is where the fault comes from, so that every
+     * caller of the webservice tells a missing record from a failure the same way.
+     *
      * @param string|null $message the fault message of the call
      * @return bool true if the fault is an answer and not a failure
      */
     public static function is_nodescription_fault($message): bool {
-        $message = \core_text::strtolower((string)$message);
-        foreach (self::NODESCRIPTION_MARKS as $mark) {
-            if (strpos($message, $mark) !== false) {
-                return true;
-            }
-        }
-
-        return false;
+        return \local_evento_service_exception::message_means_notfound($message);
     }
 
     /**
@@ -152,8 +152,9 @@ class modul_description_sync {
             $summary->processed++;
             $summary->actions[$result->action] = ($summary->actions[$result->action] ?? 0) + 1;
 
-            if ($this->serviceunavailable) {
-                $this->trace->output('...the evento webservice is unavailable, stopping this run');
+            if ($this->stopfaults >= self::STOP_AFTER_FAULTS) {
+                $this->trace->output('...the evento webservice failed ' . $this->stopfaults
+                    . ' times in a row, it is taken for unavailable, stopping this run');
                 $summary->stopped = true;
                 break;
             }
@@ -201,9 +202,11 @@ class modul_description_sync {
             $message = $ex->faultstring ?? $ex->getMessage();
             $cmid = is_null($cm) ? null : (int)$cm->id;
 
-            if (self::is_nodescription_fault($message)) {
+            if ($ex->means_notfound()) {
                 // An answer and not a failure. Neither the course nor the run may be held
-                // back for it, most modules simply carry no description in evento.
+                // back for it, most modules simply carry no description in evento. The
+                // service answered, so it also proves that it is not the service that ails.
+                $this->stopfaults = 0;
                 $this->note_check($course, $anlassnummer, $cmid,
                     'evento knows no description for this event number',
                     modul_description::ACTION_SKIP_NODESCRIPTION);
@@ -213,7 +216,7 @@ class modul_description_sync {
             }
 
             if (in_array((string)$ex->faultcode, self::STOP_FAULTCODES, true)) {
-                $this->serviceunavailable = true;
+                $this->stopfaults++;
             }
             // The fault code is kept, it is the only way to tell afterwards why a fault was
             // taken for a dead service.
@@ -223,6 +226,9 @@ class modul_description_sync {
             return $this->finish($course, $anlassnummer, modul_description::ACTION_SKIP_NODESCRIPTION,
                 'the webservice call failed: ' . $message, $cmid, false);
         }
+
+        // The call went through, so the faults counted before it were not the service.
+        $this->stopfaults = 0;
 
         $normalized = \local_evento_evento_service::normalize_modulbeschreibung($answer);
         try {
