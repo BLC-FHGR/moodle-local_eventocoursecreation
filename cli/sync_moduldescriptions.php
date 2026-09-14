@@ -117,7 +117,8 @@ foreach ($summary->actions as $action => $count) {
     cli_writeln('  ' . $action . "\t" . $count);
 }
 if ($summary->stopped) {
-    cli_problem('The run was stopped early because the evento webservice is unavailable.');
+    cli_problem('The run was stopped early, the evento webservice failed several times in a'
+        . ' row and is taken for unavailable.');
     exit(1);
 }
 

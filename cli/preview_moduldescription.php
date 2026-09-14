@@ -110,15 +110,34 @@ if (is_null($anlassnummer)) {
         $overrides['wswsdlfilename'] = $options['wsdl'];
     }
 
+    // Named before the call, so a failing call still says what was asked for.
+    cli_writeln('  anlassNummer:  ' . $anlassnummer);
+
     try {
         $client = empty($overrides) ? null : local_evento_evento_service::create_soap_client($overrides);
         $service = new local_evento_evento_service($client);
         $answer = $service->get_modulbeschreibung_by_number($anlassnummer);
         // The credits live on the event and not on the module description.
         $eventanswer = $service->get_event_by_number($anlassnummer);
-    } catch (Throwable $ex) {
+    } catch (local_evento_service_exception $ex) {
+        if ($ex->means_notfound()) {
+            // Evento reports a module without a description with a fault and not with an
+            // empty response, so this is the answer and not a problem, and the import
+            // skips such a course instead of failing over it.
+            cli_writeln('  evento knows no module description for this event number');
+            cli_writeln('  the import would skip this course, there is nothing to preview');
+            exit(0);
+        }
         // The default handler hides the debug information unless debugging is on,
-        // which turns a webservice problem into an unusable one line message.
+        // which turns a webservice problem into an unusable one line message. The
+        // faultstring names the real cause, getMessage() is the localised wrapper.
+        cli_problem(get_class($ex) . ': ' . ($ex->faultstring ?? $ex->getMessage()));
+        cli_problem('Operation: ' . $ex->operation . ', faultcode: ' . ($ex->faultcode ?? '-'));
+        if (!empty($ex->debuginfo)) {
+            cli_problem('Debug info: ' . $ex->debuginfo);
+        }
+        exit(1);
+    } catch (Throwable $ex) {
         cli_problem(get_class($ex) . ': ' . $ex->getMessage());
         if (!empty($ex->debuginfo)) {
             cli_problem('Debug info: ' . $ex->debuginfo);
@@ -127,7 +146,11 @@ if (is_null($anlassnummer)) {
     }
 
     if (is_null($answer)) {
-        cli_error("Evento knows no module description for '{$anlassnummer}'.");
+        // The webservice answered without a description. It reports a module it has none
+        // for with a fault, which is caught above, so this stays for an empty response.
+        cli_writeln('  evento knows no module description for this event number');
+        cli_writeln('  the import would skip this course, there is nothing to preview');
+        exit(0);
     }
 
     $normalized = local_evento_evento_service::normalize_modulbeschreibung($answer);
@@ -135,7 +158,6 @@ if (is_null($anlassnummer)) {
     $settings = \local_eventocoursecreation\modul_description::get_settings();
     $accepted = empty($settings->allowedstatus) || in_array((int)$normalized->idstatus, $settings->allowedstatus);
 
-    cli_writeln('  anlassNummer:  ' . $anlassnummer);
     cli_writeln('  idMB:          ' . $normalized->idmb);
     cli_writeln('  idStatus:      ' . $normalized->idstatus
         . ($accepted ? '' : ', NOT in the accepted status ids, this description would be skipped'));

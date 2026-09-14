@@ -36,6 +36,7 @@ require_once($CFG->dirroot . '/local/eventocoursecreation/locallib.php');
  * @copyright  2026 FH Graubuenden
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \local_eventocoursecreation\modul_description
+ * @covers     \local_eventocoursecreation\modul_description_sync
  */
 final class modul_description_test extends \advanced_testcase {
 
@@ -95,6 +96,67 @@ final class modul_description_test extends \advanced_testcase {
         }
 
         return $normalized;
+    }
+
+    /**
+     * Builds the fault of a real server side problem.
+     *
+     * @return \local_evento_service_exception the fault as the webservice raises it
+     */
+    private static function server_fault(): \local_evento_service_exception {
+        return new \local_evento_service_exception('getEventoModulBeschreibung', 'soapenv:Server',
+            'EventoHibernateManager -> getEventoModulBeschreibung -> java.lang.NullPointerException');
+    }
+
+    /**
+     * Builds the fault evento raises for a module it has no description for.
+     *
+     * Note the fault code, it is the one of a real server problem, so only the message
+     * tells this answer apart from the failure above.
+     *
+     * @return \local_evento_service_exception the fault as the webservice raises it
+     */
+    private static function nodescription_fault(): \local_evento_service_exception {
+        return new \local_evento_service_exception('getEventoModulBeschreibung', 'soapenv:Server',
+            'EventoHibernateManager -> getEventoModulBeschreibung -> '
+            . 'org.apache.axis2.dataretrieval.DataRetrievalException: Keine Modulbeschreibung gefunden');
+    }
+
+    /**
+     * Builds a webservice double which answers every call with a fault.
+     *
+     * @param array $faults the fault to raise, keyed by event number
+     * @param \Throwable|null $fallback the fault for an event number the array does not name,
+     *                                  a real server problem by default
+     * @return \local_evento_evento_service the double
+     */
+    private function make_failing_service(array $faults, ?\Throwable $fallback = null) {
+        $fallback = is_null($fallback) ? self::server_fault() : $fallback;
+        $service = $this->createMock(\local_evento_evento_service::class);
+        $service->method('get_modulbeschreibung_by_number')->willReturnCallback(
+            function($anlassnummer) use ($faults, $fallback) {
+                throw $faults[$anlassnummer] ?? $fallback;
+            });
+
+        return $service;
+    }
+
+    /**
+     * Creates courses which the synchronisation picks up as candidates.
+     *
+     * @param int $count how many courses to create
+     * @return array of course records, in the order the synchronisation reaches them
+     */
+    private function make_evento_courses(int $count): array {
+        $courses = array();
+        for ($i = 1; $i <= $count; $i++) {
+            $courses[] = $this->getDataGenerator()->create_course(array(
+                'idnumber' => sprintf('mod.test-MB.HS26_BS.%03d', $i),
+                'enddate' => 0,
+            ));
+        }
+
+        return $courses;
     }
 
     /**
@@ -958,6 +1020,99 @@ final class modul_description_test extends \advanced_testcase {
             'The endpoint reference (EPR) for the Operation not found is http://example.org/EventoWebservice'));
         $this->assertFalse(modul_description_sync::is_nodescription_fault(''));
         $this->assertFalse(modul_description_sync::is_nodescription_fault(null));
+    }
+
+    /**
+     * A single fault holds back its own course only, the run carries on.
+     */
+    public function test_sync_courses_carries_on_after_a_single_fault(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $courses = $this->make_evento_courses(4);
+        // The first course runs into a real fault, evento knows no description for the others.
+        $service = $this->make_failing_service(
+            array($courses[0]->idnumber => self::server_fault()), self::nodescription_fault());
+        $sync = new modul_description_sync(null, $service, $this->make_settings(array('enabled' => true)));
+
+        $summary = $sync->sync_courses();
+
+        $this->assertSame(4, $summary->processed);
+        $this->assertFalse($summary->stopped);
+        // The answers in between prove that the service is alive, so nothing is held back.
+        $this->assertFalse($sync->is_service_unavailable());
+        $this->assertSame(1, $DB->count_records('eventocoursecreation_page',
+            array('status' => EVENTOCOURSECREATION_MB_STATUS_ERROR)));
+    }
+
+    /**
+     * A fault which repeats is taken for the service itself and ends the run.
+     */
+    public function test_sync_courses_stops_once_the_faults_repeat(): void {
+        $this->resetAfterTest();
+        $this->make_evento_courses(6);
+        $sync = new modul_description_sync(null, $this->make_failing_service(array()),
+            $this->make_settings(array('enabled' => true)));
+
+        $summary = $sync->sync_courses();
+
+        $this->assertSame(modul_description_sync::STOP_AFTER_FAULTS, $summary->processed);
+        $this->assertTrue($summary->stopped);
+        $this->assertTrue($sync->is_service_unavailable());
+    }
+
+    /**
+     * Missing descriptions never end a run, however many courses carry none.
+     *
+     * Most modules have no description in evento, and evento reports that with a fault, so
+     * a run which gave up over it would never reach the courses that do have one.
+     */
+    public function test_sync_courses_is_not_stopped_by_missing_descriptions(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->make_evento_courses(6);
+        $sync = new modul_description_sync(null, $this->make_failing_service(array(), self::nodescription_fault()),
+            $this->make_settings(array('enabled' => true)));
+
+        $summary = $sync->sync_courses();
+
+        $this->assertSame(6, $summary->processed);
+        $this->assertFalse($summary->stopped);
+        $this->assertFalse($sync->is_service_unavailable());
+        // A missing description is no failure, so no course is held back for a retry either.
+        $this->assertSame(0, $DB->count_records('eventocoursecreation_page',
+            array('status' => EVENTOCOURSECREATION_MB_STATUS_ERROR)));
+    }
+
+    /**
+     * A single course reports the service as unavailable at once.
+     *
+     * There can be no second fault to go by, and the adhoc task of a new course reads this
+     * to fail on purpose, so that the task system retries the course later on.
+     */
+    public function test_sync_course_reports_the_service_as_unavailable_at_once(): void {
+        $this->resetAfterTest();
+        $courses = $this->make_evento_courses(1);
+        $sync = new modul_description_sync(null, $this->make_failing_service(array()),
+            $this->make_settings(array('enabled' => true)));
+
+        $sync->sync_course($courses[0]);
+
+        $this->assertTrue($sync->is_service_unavailable());
+    }
+
+    /**
+     * A missing description does not report the service as unavailable.
+     */
+    public function test_sync_course_of_a_module_without_a_description(): void {
+        $this->resetAfterTest();
+        $courses = $this->make_evento_courses(1);
+        $sync = new modul_description_sync(null, $this->make_failing_service(array(), self::nodescription_fault()),
+            $this->make_settings(array('enabled' => true)));
+
+        $result = $sync->sync_course($courses[0]);
+
+        $this->assertSame(modul_description::ACTION_SKIP_NODESCRIPTION, $result->action);
+        $this->assertFalse($sync->is_service_unavailable());
     }
 
     /**

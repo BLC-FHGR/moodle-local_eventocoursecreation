@@ -111,6 +111,11 @@ A module without a description in Evento is not a failure. Evento answers such a
 with a fault, which is recognised and stored as a missing description, without holding the
 course back and without stopping the run.
 
+A real failure holds the course back for the retry delay above and nothing else. Only a
+fault which repeats, see `modul_description_sync::STOP_AFTER_FAULTS`, is taken for the
+webservice itself and ends the run early: Evento reports a problem with a single record
+with the same fault code it uses when it is out of service, so one course is no evidence.
+
 ### Storage
 
 The table `eventocoursecreation_page` holds one row per course: the event number, the
