@@ -669,6 +669,25 @@ class modul_description {
     }
 
     /**
+     * Builds the content of the page out of the evento description.
+     *
+     * The import and the preview both go through here, so that the preview cannot drift
+     * away from what the import really writes. The credits and the heading belong to the
+     * text and are added before the comparison hash is built from the result.
+     *
+     * @param string|null $mbtext the raw html of the evento field mbText, null if evento sent none
+     * @param float|string|null $ects the value of the evento field anlass_ECTS
+     * @param \stdClass $settings the settings as returned by {@see self::get_settings()}
+     * @return string the content to store, empty if there is no description
+     */
+    public static function build_content($mbtext, $ects, \stdClass $settings): string {
+        $content = is_null($mbtext) ? '' : self::clean_content($mbtext);
+        $content = self::add_ects($content, $ects, $settings);
+
+        return self::add_heading($content, $settings);
+    }
+
+    /**
      * Turns the evento version into something readable.
      *
      * The webservice delivers a float, which normalize_modulbeschreibung() formats with

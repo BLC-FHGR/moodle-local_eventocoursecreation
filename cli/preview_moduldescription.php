@@ -36,7 +36,7 @@ require_once("$CFG->libdir/clilib.php");
 
 list($options, $unrecognized) = cli_get_params(
     array('anlassnummer' => false, 'courseid' => false, 'sample' => false,
-        'wslocation' => false, 'wsdl' => false, 'raw' => false, 'help' => false),
+        'wslocation' => false, 'wsdl' => false, 'raw' => false, 'soap' => false, 'help' => false),
     array('h' => 'help'));
 
 if ($unrecognized) {
@@ -60,6 +60,9 @@ Options:
 --wslocation=URL      Query another endpoint for this call only
 --wsdl=FILENAME       Use another wsdl file for this call only
 --raw                 Also print the untouched markup of evento
+--soap                Also print the untouched SOAP responses of evento, including the
+                      fields the local wsdl does not know. The personal data of the
+                      event leaders is left out.
 -h, --help            Print out this help
 
 Example:
@@ -84,6 +87,21 @@ $sample = '<article id="modulbeschreibung" data-schema-version="1.0">
     </section>
 </article>';
 
+/**
+ * Prints the untouched SOAP responses collected so far.
+ *
+ * @param array $responses the responses keyed by the name of the operation
+ * @return void
+ */
+function local_eventocoursecreation_preview_print_soap(array $responses) {
+    foreach ($responses as $operation => $response) {
+        cli_writeln('');
+        cli_writeln('== SOAP response of ' . $operation . ' ==');
+        $formatted = \local_eventocoursecreation\soap_response::format($response);
+        cli_writeln($formatted === '' ? '  none, the call did not get as far as an answer' : $formatted);
+    }
+}
+
 $anlassnummer = empty($options['anlassnummer']) ? null : (string)$options['anlassnummer'];
 
 if (!empty($options['courseid'])) {
@@ -93,6 +111,13 @@ if (!empty($options['courseid'])) {
         cli_error('Course ' . $course->id . ' carries no evento event number.');
     }
 }
+
+$soap = !empty($options['soap']);
+if ($soap && is_null($anlassnummer)) {
+    cli_problem('--soap needs the webservice, the built in sample has no SOAP response to show.');
+    $soap = false;
+}
+$soapresponses = array();
 
 cli_writeln('== Source ==');
 
@@ -109,17 +134,37 @@ if (is_null($anlassnummer)) {
     if (!empty($options['wsdl'])) {
         $overrides['wswsdlfilename'] = $options['wsdl'];
     }
+    if ($soap) {
+        // Without the trace the client forgets the response as soon as it has decoded it.
+        $overrides['wstrace'] = 1;
+    }
 
     // Named before the call, so a failing call still says what was asked for.
     cli_writeln('  anlassNummer:  ' . $anlassnummer);
 
+    $client = null;
+    $operation = null;
+    // Keeps the response of the last call, also when that call failed.
+    $keepsoap = function() use (&$client, &$operation, &$soapresponses, $soap) {
+        if ($soap && !is_null($client) && !is_null($operation)) {
+            $soapresponses[$operation] = $client->__getLastResponse();
+        }
+    };
+
     try {
         $client = empty($overrides) ? null : local_evento_evento_service::create_soap_client($overrides);
         $service = new local_evento_evento_service($client);
-        $answer = $service->get_modulbeschreibung_by_number($anlassnummer);
-        // The credits live on the event and not on the module description.
+        // The credits live on the event and not on the module description. The event is
+        // asked for first, so that --soap shows it even when evento knows no description.
+        $operation = 'listEventoAnlass';
         $eventanswer = $service->get_event_by_number($anlassnummer);
+        $keepsoap();
+        $operation = 'getEventoModulBeschreibung';
+        $answer = $service->get_modulbeschreibung_by_number($anlassnummer);
+        $keepsoap();
     } catch (local_evento_service_exception $ex) {
+        $keepsoap();
+        local_eventocoursecreation_preview_print_soap($soapresponses);
         if ($ex->means_notfound()) {
             // Evento reports a module without a description with a fault and not with an
             // empty response, so this is the answer and not a problem, and the import
@@ -138,6 +183,8 @@ if (is_null($anlassnummer)) {
         }
         exit(1);
     } catch (Throwable $ex) {
+        $keepsoap();
+        local_eventocoursecreation_preview_print_soap($soapresponses);
         cli_problem(get_class($ex) . ': ' . $ex->getMessage());
         if (!empty($ex->debuginfo)) {
             cli_problem('Debug info: ' . $ex->debuginfo);
@@ -150,6 +197,7 @@ if (is_null($anlassnummer)) {
         // for with a fault, which is caught above, so this stays for an empty response.
         cli_writeln('  evento knows no module description for this event number');
         cli_writeln('  the import would skip this course, there is nothing to preview');
+        local_eventocoursecreation_preview_print_soap($soapresponses);
         exit(0);
     }
 
@@ -173,11 +221,13 @@ if (is_null($anlassnummer)) {
             : ''));
 }
 
+// Stays empty without --soap and for the built in sample.
+local_eventocoursecreation_preview_print_soap($soapresponses);
+
 $converted = \local_eventocoursecreation\modul_description::convert_structure($raw);
 $previewsettings = \local_eventocoursecreation\modul_description::get_settings();
-$cleaned = \local_eventocoursecreation\modul_description::clean_content($raw);
-$cleaned = \local_eventocoursecreation\modul_description::add_ects($cleaned, $ects, $previewsettings);
-$cleaned = \local_eventocoursecreation\modul_description::add_heading($cleaned, $previewsettings);
+// The same call the import makes, so the preview shows exactly what would be written.
+$cleaned = \local_eventocoursecreation\modul_description::build_content($raw, $ects, $previewsettings);
 $hash = \local_eventocoursecreation\modul_description::content_hash($cleaned);
 // The built in sample carries no evento metadata, so the description stays empty there.
 $intro = \local_eventocoursecreation\modul_description::build_intro($normalized ?? null);
@@ -217,8 +267,11 @@ $checks = array(
         . \local_eventocoursecreation\modul_description::CLASS_PREFIX) !== false,
     'headings survived' => (bool)preg_match('/<h[1-6][ >]/i', $cleaned),
     'definition list survived' => stripos($cleaned, '<dl') !== false,
+    // A second build has to come out the same, or the import would rewrite the page on
+    // every run. The heading and the credits are part of the content, so both builds
+    // have to include them, comparing against the bare cleaned text always failed.
     'the hash is stable' => $hash === \local_eventocoursecreation\modul_description::content_hash(
-        \local_eventocoursecreation\modul_description::clean_content($raw)),
+        \local_eventocoursecreation\modul_description::build_content($raw, $ects, $previewsettings)),
 );
 $failed = 0;
 foreach ($checks as $label => $ok) {

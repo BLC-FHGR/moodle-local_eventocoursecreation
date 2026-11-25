@@ -1335,4 +1335,49 @@ final class modul_description_test extends \advanced_testcase {
         $this->assertCount(1, $candidates);
         $this->assertArrayHasKey($stale->id, $candidates);
     }
+
+    /**
+     * The content is built in the order the import always used: cleaned text, then the
+     * credits, then the heading.
+     */
+    public function test_build_content_matches_the_single_steps(): void {
+        $settings = $this->make_settings(array('heading' => 'Modulbeschreibung',
+            'ectstext' => EVENTOCOURSECREATION_MB_ECTSTEXT));
+        $expected = modul_description::add_heading(
+            modul_description::add_ects(modul_description::clean_content(self::SAMPLE), 4, $settings), $settings);
+
+        $result = modul_description::build_content(self::SAMPLE, 4, $settings);
+
+        $this->assertSame($expected, $result);
+        $this->assertStringStartsWith('<h2 class="eventomb-heading">Modulbeschreibung</h2>', $result);
+        $this->assertStringContainsString('eventomb-ects', $result);
+    }
+
+    /**
+     * Two builds of the same answer give the same hash, otherwise the import would
+     * rewrite the page on every run.
+     */
+    public function test_build_content_is_stable(): void {
+        $settings = $this->make_settings(array('heading' => 'Modulbeschreibung',
+            'ectstext' => EVENTOCOURSECREATION_MB_ECTSTEXT));
+
+        $first = modul_description::content_hash(modul_description::build_content(self::SAMPLE, 4, $settings));
+        $second = modul_description::content_hash(modul_description::build_content(self::SAMPLE, 4, $settings));
+
+        $this->assertNotNull($first);
+        $this->assertSame($first, $second);
+    }
+
+    /**
+     * Without a description neither the heading nor the credits make up a content, so the
+     * guard against an empty evento answer still holds.
+     */
+    public function test_build_content_without_description_stays_empty(): void {
+        $settings = $this->make_settings(array('heading' => 'Modulbeschreibung',
+            'ectstext' => EVENTOCOURSECREATION_MB_ECTSTEXT));
+
+        $this->assertSame('', modul_description::build_content(null, 4, $settings));
+        $this->assertSame('', modul_description::build_content('', 4, $settings));
+        $this->assertNull(modul_description::content_hash(modul_description::build_content(null, 4, $settings)));
+    }
 }

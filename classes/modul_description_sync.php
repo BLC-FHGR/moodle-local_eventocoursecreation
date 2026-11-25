@@ -243,10 +243,8 @@ class modul_description_sync {
                 $message, is_null($cm) ? null : (int)$cm->id, false);
         }
 
-        $content = is_null($normalized) ? '' : modul_description::clean_content($normalized->mbtext);
-        // Both belong to the text, so they go in before the hash is built.
-        $content = modul_description::add_ects($content, $ects, $this->settings);
-        $content = modul_description::add_heading($content, $this->settings);
+        $content = modul_description::build_content(is_null($normalized) ? null : $normalized->mbtext,
+            $ects, $this->settings);
         $newhash = modul_description::content_hash($content);
 
         // Neither the description line nor the name is part of the content and therefore

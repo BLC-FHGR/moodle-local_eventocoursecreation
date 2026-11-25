@@ -149,7 +149,7 @@ php local/eventocoursecreation/cli/sync_moduldescriptions.php --list
 php local/eventocoursecreation/cli/sync_moduldescriptions.php --retry
 
 # What would end up in the page, without changing anything
-php local/eventocoursecreation/cli/preview_moduldescription.php --courseid=ID [--raw]
+php local/eventocoursecreation/cli/preview_moduldescription.php --courseid=ID [--raw] [--soap]
 php local/eventocoursecreation/cli/preview_moduldescription.php --anlassnummer=NUMBER
 php local/eventocoursecreation/cli/preview_moduldescription.php --sample
 
@@ -164,6 +164,15 @@ failure. Every script prints its options with `-h`.
 Use `preview_moduldescription.php` whenever Evento changes the markup of its module
 descriptions. It shows the result of the conversion and the cleaning before anything is
 written, and it fails with a non zero exit code when one of its checks does not hold.
+
+`--raw` shows the field `mbText` as Evento sends it. `--soap` goes one step further and
+prints the untouched SOAP responses of `listEventoAnlass` and `getEventoModulBeschreibung`.
+PHP drops every element the local WSDL does not know while it decodes a response, so a
+field Evento added later only shows up there. The addresses, mail addresses and phone
+numbers of the event leaders are left out of that output. The event is fetched first, so
+it shows up next to the fault when Evento knows no description. That makes
+`--soap --anlassnummer=NUMBER` the way to look at any Evento event, a module group for
+example.
 
 ## Development
 
